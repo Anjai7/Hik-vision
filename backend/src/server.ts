@@ -72,16 +72,17 @@ app.get(['/health', '/api/health'], async (req, res) => {
 // Centralized error handler
 app.use(errorHandler);
 
-// Start server if not running in test or Vercel serverless environment
-const isServerless = !!process.env.VERCEL || process.env.NODE_ENV === 'test';
+// Start server if not running in test or explicitly in serverless function mode
+const isServerless = process.env.VERCEL_SERVERLESS === '1' || process.env.NODE_ENV === 'test';
 
 if (!isServerless) {
-  app.listen(config.PORT, async () => {
+  const listenPort = process.env.PORT ? parseInt(process.env.PORT, 10) : config.PORT;
+  app.listen(listenPort, '0.0.0.0', async () => {
     logger.info(`=======================================================`);
     logger.info(` Hikvision Attendance Backend Started`);
-    logger.info(` Port: ${config.PORT}`);
+    logger.info(` Port: ${listenPort}`);
     logger.info(` Target Terminal: ${config.HIKVISION_HOST}`);
-    logger.info(` Webhook Endpoint: http://localhost:${config.PORT}/api/attendance/webhook`);
+    logger.info(` Webhook Endpoint: /api/attendance/webhook`);
     logger.info(` Mode: ${config.NODE_ENV}`);
     logger.info(`=======================================================`);
 
