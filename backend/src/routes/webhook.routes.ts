@@ -25,7 +25,6 @@ interface ParsedHikEvent {
  */
 function extractEventData(body: any, files?: Express.Multer.File[]): ParsedHikEvent[] {
   const events: ParsedHikEvent[] = [];
-
   let candidateObjects: any[] = [];
 
   // Check if body itself has JSON or nested stringified JSON
@@ -83,13 +82,26 @@ function extractEventData(body: any, files?: Express.Multer.File[]): ParsedHikEv
       const serialNo = item.serialNo !== undefined ? Number(item.serialNo) : null;
       const employeeNo = item.employeeNoString || item.employeeNo || item.cardNo || null;
       const employeeName = item.name || item.employeeName || null;
-      const verifyMode = item.currentVerifyMode || item.verifyMode || item.cardReaderKind || null;
       const doorNo = item.doorNo !== undefined ? Number(item.doorNo) : null;
       const cardReaderNo = item.cardReaderNo !== undefined ? Number(item.cardReaderNo) : null;
 
+      // Normalize verification mode
+      let verifyMode = item.currentVerifyMode || item.verifyMode || item.cardReaderKind || null;
+      if (verifyMode === 'faceOrFpOrCardOrPw' || !verifyMode) {
+        if (item.FaceRect || minor === 104 || minor === 75) {
+          verifyMode = 'face';
+        } else if (item.cardNo) {
+          verifyMode = 'card';
+        } else {
+          verifyMode = 'face';
+        }
+      }
+
+      // Robust timestamp extraction
       let eventTime = new Date();
-      if (item.time) {
-        const parsed = new Date(item.time);
+      const rawTime = item.time || item.dateTime || obj.dateTime || (body && body.dateTime);
+      if (rawTime) {
+        const parsed = new Date(rawTime);
         if (!isNaN(parsed.getTime())) {
           eventTime = parsed;
         }
@@ -114,8 +126,42 @@ function extractEventData(body: any, files?: Express.Multer.File[]): ParsedHikEv
 }
 
 /**
+ * Responds with standard Hikvision acknowledgment
+ */
+function sendHikvisionAck(req: Request, res: Response, processedCount: number) {
+  const url = req.originalUrl || '/api/attendance/webhook';
+  const isJson =
+    req.headers.accept?.includes('application/json') ||
+    req.headers['content-type']?.includes('application/json');
+
+  const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<ResponseStatus version="1.0" xmlns="http://www.hikvision.com/networks/forms">
+<requestURL>${url}</requestURL>
+<statusCode>1</statusCode>
+<statusString>OK</statusString>
+<subStatusCode>ok</subStatusCode>
+</ResponseStatus>`;
+
+  if (isJson) {
+    res.status(200).json({
+      ResponseStatus: {
+        requestURL: url,
+        statusCode: 1,
+        statusString: 'OK',
+        subStatusCode: 'ok',
+      },
+      statusCode: 1,
+      statusString: 'OK',
+      processedCount,
+    });
+  } else {
+    // Return XML acknowledgment which clears the terminal's alarm retry buffer
+    res.status(200).type('application/xml').send(xml);
+  }
+}
+
+/**
  * Webhook handler for Hikvision HTTP Listening (Event Alarm Push)
- * Supports both multipart/form-data and application/json
  */
 const handleHikvisionWebhook = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -130,12 +176,7 @@ const handleHikvisionWebhook = async (req: Request, res: Response, next: NextFun
 
     if (parsedEvents.length === 0) {
       logger.warn('Received Hikvision push, but no valid event structures recognized in payload');
-      // Always return 200 OK so Hikvision doesn't keep resending
-      res.status(200).json({
-        statusCode: 1,
-        statusString: 'OK',
-        message: 'Acknowledged without parsable events',
-      });
+      sendHikvisionAck(req, res, 0);
       return;
     }
 
@@ -143,6 +184,29 @@ const handleHikvisionWebhook = async (req: Request, res: Response, next: NextFun
     let savedCount = 0;
 
     for (const ev of parsedEvents) {
+      // 1. Strict Serial Number deduplication: If this serial number has already been recorded for this device, skip it!
+      let existing = null;
+      if (ev.serialNo !== null && ev.serialNo !== undefined && ev.serialNo > 0) {
+        existing = await prisma.attendanceEvent.findFirst({
+          where: {
+            deviceId: device.id,
+            serialNo: ev.serialNo,
+          },
+        });
+      }
+
+      // 2. Cooldown debounce: If the same employee already has an event within the last 60 seconds, skip rapid re-scans
+      if (!existing && ev.employeeNo) {
+        const sixtySecondsAgo = new Date(Date.now() - 60 * 1000);
+        existing = await prisma.attendanceEvent.findFirst({
+          where: {
+            deviceId: device.id,
+            employeeNo: ev.employeeNo,
+            eventTime: { gte: sixtySecondsAgo },
+          },
+        });
+      }
+
       // Auto-upsert user record if employeeNo is present
       if (ev.employeeNo) {
         try {
@@ -169,16 +233,6 @@ const handleHikvisionWebhook = async (req: Request, res: Response, next: NextFun
         }
       }
 
-      // Check for duplicate
-      const existing = await prisma.attendanceEvent.findFirst({
-        where: {
-          deviceId: device.id,
-          serialNo: ev.serialNo,
-          eventTime: ev.eventTime,
-          employeeNo: ev.employeeNo,
-        },
-      });
-
       if (!existing) {
         await prisma.attendanceEvent.create({
           data: {
@@ -196,6 +250,8 @@ const handleHikvisionWebhook = async (req: Request, res: Response, next: NextFun
           },
         });
         savedCount++;
+      } else {
+        logger.info(`Skipped duplicate/retried event for employee ${ev.employeeNo}, serial ${ev.serialNo}`);
       }
     }
 
@@ -205,23 +261,12 @@ const handleHikvisionWebhook = async (req: Request, res: Response, next: NextFun
       data: { lastSeenAt: new Date() },
     }).catch(() => {});
 
-    logger.info(`Successfully processed Hikvision webhook: ${savedCount} new event(s) recorded in database.`);
-
-    // Return Hikvision standard response acknowledgment
-    // Content-Type application/json or XML is accepted by Hikvision terminals
-    res.status(200).json({
-      statusCode: 1,
-      statusString: 'OK',
-      processedCount: savedCount,
-    });
+    logger.info(`Hikvision webhook processed: ${savedCount} new event(s). Responding with OK.`);
+    sendHikvisionAck(req, res, savedCount);
   } catch (error: any) {
     logger.error('Error handling Hikvision webhook push', { error: error.message });
-    // Still return 200 OK so terminal does not enter rapid retry loop on transient parsing issues
-    res.status(200).json({
-      statusCode: 1,
-      statusString: 'OK',
-      warning: 'Processed with errors',
-    });
+    // Still return standard OK so terminal doesn't crash or flood on retries
+    sendHikvisionAck(req, res, 0);
   }
 };
 

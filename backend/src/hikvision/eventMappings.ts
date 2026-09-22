@@ -98,7 +98,7 @@ export function getNeutralEventDescription(major: number, minor: number, verifyM
   const description = known ? known.neutralDescription : `Raw Event (Major: ${major}, Minor: ${minor})`;
 
   const verifyModeMap: Record<string, string> = {
-    faceOrFpOrCardOrPw: 'Face / Fingerprint / Card / Password',
+    faceOrFpOrCardOrPw: minor === 104 || minor === 75 ? 'Face' : 'Card / Biometric',
     fp: 'Fingerprint',
     face: 'Face',
     card: 'Card',
@@ -107,7 +107,7 @@ export function getNeutralEventDescription(major: number, minor: number, verifyM
     cardAndFp: 'Card + Fingerprint',
   };
 
-  const verifyModeLabel = verifyMode ? verifyModeMap[verifyMode] || verifyMode : 'Unspecified';
+  const verifyModeLabel = verifyMode ? verifyModeMap[verifyMode] || (verifyMode.includes('face') ? 'Face' : verifyMode) : (minor === 104 || minor === 75 ? 'Face' : 'Automatic');
 
   return {
     category,
