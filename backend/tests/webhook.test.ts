@@ -11,6 +11,8 @@ vi.mock('../src/db', () => ({
       update: vi.fn(),
     },
     user: {
+      findFirst: vi.fn(),
+      create: vi.fn(),
       upsert: vi.fn(),
     },
     attendanceEvent: {
@@ -106,5 +108,46 @@ describe('Hikvision Webhook Endpoint', () => {
     expect(res.status).toBe(200);
     expect(res.body.processedCount).toBe(0); // 0 new events created
     expect(prisma.attendanceEvent.create).not.toHaveBeenCalled();
+  });
+
+  it('flags suspended users as Failed Authentication / Denied (minor: 39)', async () => {
+    (prisma.attendanceEvent.findFirst as any).mockResolvedValue(null);
+    (prisma.user.findFirst as any).mockResolvedValue({
+      id: 'mock-user-1',
+      employeeNo: '1001',
+      name: 'Alice Smith',
+      enabled: false, // User is suspended!
+    });
+    (prisma.attendanceEvent.create as any).mockResolvedValue({
+      id: 'mock-event-denied',
+    });
+
+    const payload = {
+      eventType: 'AccessControllerEvent',
+      AccessControllerEvent: {
+        majorEventType: 5,
+        subEventType: 75,
+        name: 'Alice Smith',
+        employeeNoString: '1001',
+        serialNo: 1002,
+        time: '2026-09-22T10:00:00Z',
+      },
+    };
+
+    const res = await request(app)
+      .post('/api/attendance/webhook')
+      .send(payload)
+      .set('Content-Type', 'application/json');
+
+    expect(res.status).toBe(200);
+    expect(prisma.attendanceEvent.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          employeeNo: '1001',
+          major: 5,
+          minor: 39, // Denied!
+        }),
+      })
+    );
   });
 });

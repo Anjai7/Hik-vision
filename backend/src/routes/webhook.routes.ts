@@ -214,30 +214,47 @@ const handleHikvisionWebhook = async (req: Request, res: Response, next: NextFun
         });
       }
 
-      // Auto-upsert user record if employeeNo is present
+      // Check user record for access status & name resolution
+      let isUserSuspended = false;
       if (ev.employeeNo) {
         try {
-          await prisma.user.upsert({
+          const existingUser = await prisma.user.findFirst({
             where: {
-              deviceId_employeeNo: {
-                deviceId: device.id,
-                employeeNo: ev.employeeNo,
-              },
-            },
-            update: {
-              name: ev.employeeName || undefined,
-              updatedAt: new Date(),
-            },
-            create: {
               deviceId: device.id,
               employeeNo: ev.employeeNo,
-              name: ev.employeeName || `Employee ${ev.employeeNo}`,
-              userType: 'normal',
             },
           });
+
+          if (existingUser) {
+            if (existingUser.enabled === false) {
+              isUserSuspended = true;
+            }
+            if (existingUser.name && !ev.employeeName) {
+              ev.employeeName = existingUser.name;
+            }
+          } else {
+            // Auto-create newly detected user
+            await prisma.user.create({
+              data: {
+                deviceId: device.id,
+                employeeNo: ev.employeeNo,
+                name: ev.employeeName || `Employee ${ev.employeeNo}`,
+                userType: 'normal',
+                enabled: true,
+              },
+            });
+          }
         } catch (uErr: any) {
-          logger.debug('Could not auto-upsert user from webhook event', { error: uErr.message });
+          logger.debug('Could not check or create user from webhook event', { error: uErr.message });
         }
+      }
+
+      // If user access was suspended in portal, mark as access denied (minor: 39)
+      const major = ev.major;
+      let minor = ev.minor;
+      if (isUserSuspended) {
+        minor = 39; // Failed Authentication / Denied
+        logger.warn(`Suspended employee ${ev.employeeNo} (${ev.employeeName}) attempted access! Marked as Denied.`);
       }
 
       if (!existing) {
@@ -247,8 +264,8 @@ const handleHikvisionWebhook = async (req: Request, res: Response, next: NextFun
             employeeNo: ev.employeeNo,
             employeeName: ev.employeeName,
             eventTime: ev.eventTime,
-            major: ev.major,
-            minor: ev.minor,
+            major,
+            minor,
             verificationMode: ev.verificationMode,
             doorNo: ev.doorNo,
             cardReaderNo: ev.cardReaderNo,
