@@ -2,22 +2,26 @@ import React, { useEffect, useState } from 'react';
 import {
   Users,
   Search,
-  RefreshCw,
   Fingerprint,
   ScanFace,
   CreditCard,
-  ShieldAlert,
-  Info,
+  UserPlus,
+  Edit2,
+  Trash2,
+  AlertTriangle,
+  CheckCircle2,
+  Shield,
+  ShieldOff,
 } from 'lucide-react';
-import { usersApi, GetUsersParams } from '../api/usersApi';
+import { usersApi, GetUsersParams, CreateUserPayload, UpdateUserPayload } from '../api/usersApi';
 import { UserData } from '../types';
 import { Badge } from '../components/ui/Badge';
+import { Modal } from '../components/ui/Modal';
 import { Pagination } from '../components/ui/Pagination';
 
 export const UsersPage: React.FC = () => {
   const [users, setUsers] = useState<UserData[]>([]);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -25,6 +29,25 @@ export const UsersPage: React.FC = () => {
   const [bioFilter, setBioFilter] = useState<'all' | 'fp' | 'face' | 'card'>('all');
   const [page, setPage] = useState(1);
   const [pagination, setPagination] = useState({ page: 1, limit: 20, total: 0, totalPages: 1 });
+
+  // Modals state
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+
+  // Form states
+  const [formData, setFormData] = useState<CreateUserPayload>({
+    employeeNo: '',
+    name: '',
+    userType: 'normal',
+    gender: 'male',
+    enabled: true,
+    groupId: 1,
+    numOfCard: 0,
+  });
+
+  const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
 
   const fetchUsers = async () => {
     try {
@@ -62,97 +85,194 @@ export const UsersPage: React.FC = () => {
     fetchUsers();
   };
 
-  const handleSyncUsers = async () => {
+  // Open Add Modal
+  const openAddModal = () => {
+    setFormData({
+      employeeNo: '',
+      name: '',
+      userType: 'normal',
+      gender: 'male',
+      enabled: true,
+      groupId: 1,
+      numOfCard: 0,
+    });
+    setIsAddModalOpen(true);
+  };
+
+  // Open Edit Modal
+  const openEditModal = (user: UserData) => {
+    setSelectedUser(user);
+    setFormData({
+      employeeNo: user.employeeNo,
+      name: user.name,
+      userType: user.userType || 'normal',
+      gender: user.gender || 'male',
+      enabled: user.enabled,
+      groupId: user.groupId || 1,
+      numOfCard: user.numOfCard || 0,
+    });
+    setIsEditModalOpen(true);
+  };
+
+  // Open Delete Modal
+  const openDeleteModal = (user: UserData) => {
+    setSelectedUser(user);
+    setIsDeleteModalOpen(true);
+  };
+
+  // Create User Handler
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!formData.employeeNo || !formData.name) {
+      setError('Employee ID and Name are required');
+      return;
+    }
+
     try {
-      setSyncing(true);
+      setActionLoading(true);
       setError(null);
-      setSuccessMsg(null);
-      const result = await usersApi.syncUsers();
-      setSuccessMsg(`Successfully synchronized ${result.count} users from terminal in ${result.durationMs}ms`);
-      setPage(1);
+      await usersApi.createUser(formData);
+      setSuccessMsg(`Employee '${formData.name}' (ID: ${formData.employeeNo}) added successfully.`);
+      setIsAddModalOpen(false);
       await fetchUsers();
     } catch (err: any) {
-      setError(err.message || 'Failed to synchronize users from terminal');
+      setError(err.message || 'Failed to add employee');
     } finally {
-      setSyncing(false);
+      setActionLoading(false);
+    }
+  };
+
+  // Update User Handler
+  const handleUpdateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUser) return;
+
+    try {
+      setActionLoading(true);
+      setError(null);
+      const payload: UpdateUserPayload = {
+        name: formData.name,
+        userType: formData.userType,
+        gender: formData.gender,
+        enabled: formData.enabled,
+        groupId: formData.groupId,
+      };
+      await usersApi.updateUser(selectedUser.employeeNo, payload);
+      setSuccessMsg(`Employee '${formData.name}' updated successfully.`);
+      setIsEditModalOpen(false);
+      await fetchUsers();
+    } catch (err: any) {
+      setError(err.message || 'Failed to update employee');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Delete User Handler
+  const handleDeleteUser = async () => {
+    if (!selectedUser) return;
+
+    try {
+      setActionLoading(true);
+      setError(null);
+      await usersApi.deleteUser(selectedUser.employeeNo);
+      setSuccessMsg(`Employee '${selectedUser.name}' removed successfully.`);
+      setIsDeleteModalOpen(false);
+      await fetchUsers();
+    } catch (err: any) {
+      setError(err.message || 'Failed to delete employee');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Quick Toggle Status Handler
+  const handleToggleStatus = async (user: UserData) => {
+    try {
+      const nextStatus = !user.enabled;
+      await usersApi.toggleStatus(user.employeeNo, nextStatus);
+      setUsers((prev) =>
+        prev.map((u) => (u.employeeNo === user.employeeNo ? { ...u, enabled: nextStatus } : u))
+      );
+      setSuccessMsg(
+        `Access for '${user.name}' has been ${nextStatus ? 'activated' : 'suspended'}.`
+      );
+    } catch (err: any) {
+      setError(err.message || 'Failed to change access status');
     }
   };
 
   return (
     <div>
-      {/* Notice Banner */}
-      <div className="alert-banner" style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.25)', color: '#93c5fd' }}>
-        <Info size={18} />
-        <span>
-          User profiles and credentials are read directly from the Hikvision terminal. Remote biometric enrollment is intentionally disabled until hardware write endpoints are verified.
-        </span>
-      </div>
-
       {error && (
         <div className="alert-banner alert-error">
-          <ShieldAlert size={18} />
+          <AlertTriangle size={18} />
           <span>{error}</span>
         </div>
       )}
 
       {successMsg && (
         <div className="alert-banner alert-success">
-          <RefreshCw size={18} />
+          <CheckCircle2 size={18} />
           <span>{successMsg}</span>
         </div>
       )}
 
-      <div className="table-card">
-        <div className="table-header-bar">
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <Users size={20} color="#3b82f6" />
-            <div>
-              <div className="table-title">Registered Terminal Users</div>
-              <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
-                Total: {pagination.total} employees recorded
-              </div>
-            </div>
+      {/* Main Container */}
+      <div className="card">
+        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+          <div>
+            <h2 className="card-title">Employee & Access Management</h2>
+            <p className="card-subtitle">Manage enrolled employees, credential access permissions, and profiles</p>
           </div>
 
-          <div className="table-filters">
-            {/* Search Input */}
-            <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: '8px' }}>
+          <button
+            className="btn btn-primary"
+            onClick={openAddModal}
+            style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+          >
+            <UserPlus size={16} />
+            <span>Add Employee</span>
+          </button>
+        </div>
+
+        {/* Filter Controls Bar */}
+        <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border-color)', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+          <form onSubmit={handleSearchSubmit} style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <div style={{ position: 'relative' }}>
+              <Search size={14} style={{ position: 'absolute', left: '10px', top: '10px', color: 'var(--text-muted)' }} />
               <input
                 type="text"
-                className="input-field"
                 placeholder="Search name or ID..."
+                className="input-field"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                style={{ width: '180px' }}
+                style={{ paddingLeft: '32px', width: '220px' }}
               />
-              <button type="submit" className="btn btn-secondary" style={{ padding: '8px 12px' }}>
-                <Search size={14} />
+            </div>
+            <button type="submit" className="btn btn-secondary">Search</button>
+          </form>
+
+          {/* Biometric filter buttons */}
+          <div style={{ display: 'flex', gap: '6px' }}>
+            {(['all', 'face', 'card', 'fp'] as const).map((mode) => (
+              <button
+                key={mode}
+                className={`btn ${bioFilter === mode ? 'btn-secondary' : 'btn-outline'}`}
+                style={{
+                  fontSize: '12px',
+                  padding: '6px 12px',
+                  borderColor: bioFilter === mode ? 'var(--primary-color)' : undefined,
+                  textTransform: 'capitalize',
+                }}
+                onClick={() => {
+                  setBioFilter(mode);
+                  setPage(1);
+                }}
+              >
+                {mode === 'all' ? 'All Employees' : mode === 'fp' ? 'Fingerprint' : mode}
               </button>
-            </form>
-
-            {/* Biometric filter */}
-            <select
-              className="select-field"
-              value={bioFilter}
-              onChange={(e) => {
-                setBioFilter(e.target.value as any);
-                setPage(1);
-              }}
-            >
-              <option value="all">All Biometrics</option>
-              <option value="fp">Has Fingerprint</option>
-              <option value="face">Has Face</option>
-              <option value="card">Has Card</option>
-            </select>
-
-            <button
-              className="btn btn-primary"
-              onClick={handleSyncUsers}
-              disabled={syncing}
-            >
-              <RefreshCw size={14} className={syncing ? 'spinner' : ''} />
-              {syncing ? 'Syncing...' : 'Sync Users'}
-            </button>
+            ))}
           </div>
         </div>
 
@@ -161,13 +281,13 @@ export const UsersPage: React.FC = () => {
           <table className="data-table">
             <thead>
               <tr>
-                <th>Employee No</th>
+                <th>Employee ID</th>
                 <th>Full Name</th>
-                <th>User Type</th>
-                <th>Fingerprint</th>
-                <th>Face Profile</th>
-                <th>Card</th>
-                <th>Status</th>
+                <th>Access Status</th>
+                <th>Role / Type</th>
+                <th>Enrolled Biometrics</th>
+                <th>Department</th>
+                <th style={{ textAlign: 'right' }}>Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -175,61 +295,92 @@ export const UsersPage: React.FC = () => {
                 <tr>
                   <td colSpan={7} style={{ textAlign: 'center', padding: '36px' }}>
                     <div className="spinner" style={{ margin: '0 auto 8px auto' }} />
-                    <span style={{ color: 'var(--text-muted)' }}>Loading users...</span>
+                    <span style={{ color: 'var(--text-muted)' }}>Loading employee roster...</span>
                   </td>
                 </tr>
               ) : users.length > 0 ? (
-                users.map((user) => (
-                  <tr key={user.id}>
+                users.map((u) => (
+                  <tr key={u.id}>
                     <td>
-                      <span style={{ fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
-                        {user.employeeNo}
+                      <Badge variant="neutral">{u.employeeNo}</Badge>
+                    </td>
+                    <td style={{ fontWeight: 600 }}>{u.name}</td>
+                    <td>
+                      <button
+                        onClick={() => handleToggleStatus(u)}
+                        className="btn btn-outline"
+                        style={{
+                          padding: '3px 10px',
+                          borderRadius: '20px',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '6px',
+                          background: u.enabled ? 'rgba(16, 185, 129, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                          borderColor: u.enabled ? 'rgba(16, 185, 129, 0.3)' : 'rgba(239, 68, 68, 0.3)',
+                          color: u.enabled ? '#10b981' : '#ef4444',
+                          cursor: 'pointer',
+                          fontSize: '12px',
+                        }}
+                        title="Click to toggle access active/disabled"
+                      >
+                        {u.enabled ? <Shield size={12} /> : <ShieldOff size={12} />}
+                        <span>{u.enabled ? 'Active' : 'Suspended'}</span>
+                      </button>
+                    </td>
+                    <td>
+                      <span style={{ textTransform: 'capitalize', color: 'var(--text-secondary)' }}>
+                        {u.userType || 'Normal'}
                       </span>
                     </td>
-                    <td style={{ fontWeight: 600 }}>{user.name}</td>
                     <td>
-                      <Badge variant="neutral">{user.userType}</Badge>
-                    </td>
-                    <td>
-                      {user.numOfFP > 0 ? (
-                        <Badge variant="success">
-                          <Fingerprint size={12} /> {user.numOfFP} Enrolled
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        <Badge variant={u.numOfFace > 0 ? 'success' : 'neutral'}>
+                          <ScanFace size={11} style={{ marginRight: '4px' }} />
+                          Face ({u.numOfFace})
                         </Badge>
-                      ) : (
-                        <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>None</span>
-                      )}
-                    </td>
-                    <td>
-                      {user.numOfFace > 0 ? (
-                        <Badge variant="info">
-                          <ScanFace size={12} /> {user.numOfFace} Enrolled
+                        <Badge variant={u.numOfCard > 0 ? 'info' : 'neutral'}>
+                          <CreditCard size={11} style={{ marginRight: '4px' }} />
+                          Card ({u.numOfCard})
                         </Badge>
-                      ) : (
-                        <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>None</span>
-                      )}
-                    </td>
-                    <td>
-                      {user.numOfCard > 0 ? (
-                        <Badge variant="warning">
-                          <CreditCard size={12} /> {user.numOfCard} Enrolled
+                        <Badge variant={u.numOfFP > 0 ? 'success' : 'neutral'}>
+                          <Fingerprint size={11} style={{ marginRight: '4px' }} />
+                          FP ({u.numOfFP})
                         </Badge>
-                      ) : (
-                        <span style={{ color: 'var(--text-muted)', fontSize: '12px' }}>None</span>
-                      )}
+                      </div>
                     </td>
-                    <td>
-                      {user.enabled ? (
-                        <Badge variant="success">Active</Badge>
-                      ) : (
-                        <Badge variant="danger">Disabled</Badge>
-                      )}
+                    <td style={{ color: 'var(--text-muted)' }}>
+                      Group {u.groupId ?? 1}
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <div style={{ display: 'inline-flex', gap: '6px' }}>
+                        <button
+                          className="btn btn-secondary"
+                          style={{ padding: '5px 8px' }}
+                          onClick={() => openEditModal(u)}
+                          title="Edit Employee"
+                        >
+                          <Edit2 size={13} />
+                        </button>
+                        <button
+                          className="btn btn-outline"
+                          style={{ padding: '5px 8px', borderColor: 'rgba(239, 68, 68, 0.3)', color: '#ef4444' }}
+                          onClick={() => openDeleteModal(u)}
+                          title="Remove Employee"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="empty-state">
-                    No users found matching your query. Click "Sync Users" to fetch from device.
+                  <td colSpan={7} style={{ textAlign: 'center', padding: '40px' }}>
+                    <Users size={32} style={{ margin: '0 auto 10px auto', color: 'var(--text-muted)' }} />
+                    <p style={{ fontWeight: 500, color: 'var(--text-secondary)' }}>No employees found</p>
+                    <p style={{ fontSize: '13px', color: 'var(--text-muted)', marginTop: '4px' }}>
+                      Click "Add Employee" above to enroll a new team member.
+                    </p>
                   </td>
                 </tr>
               )}
@@ -237,14 +388,226 @@ export const UsersPage: React.FC = () => {
           </table>
         </div>
 
+        {/* Pagination */}
         <Pagination
           page={pagination.page}
           totalPages={pagination.totalPages}
           total={pagination.total}
           limit={pagination.limit}
-          onPageChange={(newPage) => setPage(newPage)}
+          onPageChange={(p) => setPage(p)}
         />
       </div>
+
+      {/* ADD EMPLOYEE MODAL */}
+      <Modal
+        isOpen={isAddModalOpen}
+        title="Add New Employee"
+        onClose={() => setIsAddModalOpen(false)}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+            <button className="btn btn-outline" onClick={() => setIsAddModalOpen(false)}>Cancel</button>
+            <button className="btn btn-primary" onClick={handleCreateUser} disabled={actionLoading}>
+              {actionLoading ? 'Saving...' : 'Save Employee'}
+            </button>
+          </div>
+        }
+      >
+        <form onSubmit={handleCreateUser} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div>
+            <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
+              Employee ID <span style={{ color: '#ef4444' }}>*</span>
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. 102"
+              className="input-field"
+              value={formData.employeeNo}
+              onChange={(e) => setFormData({ ...formData, employeeNo: e.target.value })}
+              style={{ width: '100%' }}
+            />
+            <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+              This must match the ID used at the terminal for automatic punch pairing.
+            </span>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
+              Full Name <span style={{ color: '#ef4444' }}>*</span>
+            </label>
+            <input
+              type="text"
+              required
+              placeholder="e.g. Alex Morgan"
+              className="input-field"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              style={{ width: '100%' }}
+            />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
+                Role / Type
+              </label>
+              <select
+                className="select-field"
+                value={formData.userType}
+                onChange={(e) => setFormData({ ...formData, userType: e.target.value })}
+                style={{ width: '100%' }}
+              >
+                <option value="normal">Normal Staff</option>
+                <option value="visitor">Visitor</option>
+                <option value="admin">Administrator</option>
+              </select>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
+                Gender
+              </label>
+              <select
+                className="select-field"
+                value={formData.gender || 'male'}
+                onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                style={{ width: '100%' }}
+              >
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
+              Access Permission
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
+              <input
+                type="checkbox"
+                checked={formData.enabled}
+                onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
+              />
+              <span>Allow terminal access and check-in</span>
+            </label>
+          </div>
+        </form>
+      </Modal>
+
+      {/* EDIT EMPLOYEE MODAL */}
+      <Modal
+        isOpen={isEditModalOpen}
+        title={`Edit Employee (${selectedUser?.employeeNo})`}
+        onClose={() => setIsEditModalOpen(false)}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+            <button className="btn btn-outline" onClick={() => setIsEditModalOpen(false)}>Cancel</button>
+            <button className="btn btn-primary" onClick={handleUpdateUser} disabled={actionLoading}>
+              {actionLoading ? 'Saving...' : 'Update Details'}
+            </button>
+          </div>
+        }
+      >
+        <form onSubmit={handleUpdateUser} style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
+          <div>
+            <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
+              Full Name
+            </label>
+            <input
+              type="text"
+              required
+              className="input-field"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              style={{ width: '100%' }}
+            />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
+                Role / Type
+              </label>
+              <select
+                className="select-field"
+                value={formData.userType}
+                onChange={(e) => setFormData({ ...formData, userType: e.target.value })}
+                style={{ width: '100%' }}
+              >
+                <option value="normal">Normal Staff</option>
+                <option value="visitor">Visitor</option>
+                <option value="admin">Administrator</option>
+              </select>
+            </div>
+
+            <div>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
+                Gender
+              </label>
+              <select
+                className="select-field"
+                value={formData.gender || 'male'}
+                onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                style={{ width: '100%' }}
+              >
+                <option value="male">Male</option>
+                <option value="female">Female</option>
+                <option value="other">Other</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
+              Access Permission Status
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px' }}>
+              <input
+                type="checkbox"
+                checked={formData.enabled}
+                onChange={(e) => setFormData({ ...formData, enabled: e.target.checked })}
+              />
+              <span>Active (Granted Access)</span>
+            </label>
+          </div>
+        </form>
+      </Modal>
+
+      {/* DELETE CONFIRMATION MODAL */}
+      <Modal
+        isOpen={isDeleteModalOpen}
+        title="Remove Employee"
+        onClose={() => setIsDeleteModalOpen(false)}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+            <button className="btn btn-outline" onClick={() => setIsDeleteModalOpen(false)}>Cancel</button>
+            <button
+              className="btn btn-primary"
+              style={{ background: '#ef4444', borderColor: '#ef4444' }}
+              onClick={handleDeleteUser}
+              disabled={actionLoading}
+            >
+              {actionLoading ? 'Deleting...' : 'Delete Employee'}
+            </button>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', gap: '14px', alignItems: 'flex-start' }}>
+          <div style={{ padding: '8px', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '50%', color: '#ef4444' }}>
+            <AlertTriangle size={24} />
+          </div>
+          <div>
+            <p style={{ fontWeight: 600, fontSize: '15px', marginBottom: '6px' }}>
+              Are you sure you want to remove {selectedUser?.name}?
+            </p>
+            <p style={{ color: 'var(--text-secondary)', fontSize: '13px', lineHeight: '1.5' }}>
+              Employee ID <strong>{selectedUser?.employeeNo}</strong> will be deleted from the database.
+            </p>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 };

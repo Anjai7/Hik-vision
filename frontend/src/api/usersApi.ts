@@ -10,6 +10,24 @@ export interface GetUsersParams {
   hasCard?: boolean;
 }
 
+export interface CreateUserPayload {
+  employeeNo: string;
+  name: string;
+  userType?: string;
+  enabled?: boolean;
+  gender?: string | null;
+  groupId?: number | null;
+  numOfCard?: number;
+}
+
+export interface UpdateUserPayload {
+  name?: string;
+  userType?: string;
+  enabled?: boolean;
+  gender?: string | null;
+  groupId?: number | null;
+}
+
 export const usersApi = {
   getUsers: async (params?: GetUsersParams) => {
     const res = await apiClient.get<ApiResponse<UserData[]>>('/users', { params });
@@ -21,6 +39,26 @@ export const usersApi = {
 
   getUserByEmployeeNo: async (employeeNo: string): Promise<UserData> => {
     const res = await apiClient.get<ApiResponse<UserData>>(`/users/${employeeNo}`);
+    return res.data.data;
+  },
+
+  createUser: async (payload: CreateUserPayload): Promise<UserData> => {
+    const res = await apiClient.post<ApiResponse<UserData>>('/users', payload);
+    return res.data.data;
+  },
+
+  updateUser: async (employeeNo: string, payload: UpdateUserPayload): Promise<UserData> => {
+    const res = await apiClient.put<ApiResponse<UserData>>(`/users/${employeeNo}`, payload);
+    return res.data.data;
+  },
+
+  deleteUser: async (employeeNo: string): Promise<{ success: boolean; deletedEmployeeNo: string }> => {
+    const res = await apiClient.delete<ApiResponse<{ success: boolean; deletedEmployeeNo: string }>>(`/users/${employeeNo}`);
+    return res.data.data;
+  },
+
+  toggleStatus: async (employeeNo: string, enabled: boolean): Promise<UserData> => {
+    const res = await apiClient.patch<ApiResponse<UserData>>(`/users/${employeeNo}/status`, { enabled });
     return res.data.data;
   },
 

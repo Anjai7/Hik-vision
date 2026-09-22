@@ -6,6 +6,7 @@ interface StatCardProps {
   icon: React.ReactNode;
   iconBg?: string;
   meta?: string;
+  onClick?: () => void;
 }
 
 export const StatCard: React.FC<StatCardProps> = ({
@@ -14,9 +15,14 @@ export const StatCard: React.FC<StatCardProps> = ({
   icon,
   iconBg = 'rgba(59, 130, 246, 0.15)',
   meta,
+  onClick,
 }) => {
   return (
-    <div className="stat-card">
+    <div
+      className="stat-card"
+      onClick={onClick}
+      style={{ cursor: onClick ? 'pointer' : undefined }}
+    >
       <div className="stat-card-header">
         <span className="stat-card-title">{title}</span>
         <div className="stat-card-icon" style={{ background: iconBg }}>

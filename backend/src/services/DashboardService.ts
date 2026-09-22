@@ -16,6 +16,7 @@ export class DashboardService {
       cardUsers,
       totalEvents,
       todayEvents,
+      failedAttemptsCount,
       recentEventsList,
     ] = await Promise.all([
       prisma.user.count().catch(() => 0),
@@ -24,6 +25,12 @@ export class DashboardService {
       prisma.user.count({ where: { numOfCard: { gt: 0 } } }).catch(() => 0),
       prisma.attendanceEvent.count().catch(() => 0),
       prisma.attendanceEvent.count({ where: { eventTime: { gte: startOfToday } } }).catch(() => 0),
+      prisma.attendanceEvent.count({
+        where: {
+          eventTime: { gte: startOfToday },
+          minor: { in: [39, 76, 78, 33, 34, 37] },
+        },
+      }).catch(() => 0),
       prisma.attendanceEvent
         .findMany({
           take: 7,
@@ -36,6 +43,18 @@ export class DashboardService {
         })
         .catch(() => []),
     ]);
+
+    // Unique employees present today
+    const todayPunches = await prisma.attendanceEvent.findMany({
+      where: {
+        eventTime: { gte: startOfToday },
+        minor: { notIn: [1, 2, 21, 22] },
+        employeeNo: { not: null },
+      },
+      select: { employeeNo: true },
+    }).catch(() => []);
+
+    const uniqueEmployeesPresentToday = new Set(todayPunches.map((p) => p.employeeNo)).size;
 
     const formattedRecentEvents = recentEventsList.map((ev) => {
       const descInfo = getNeutralEventDescription(ev.major, ev.minor, ev.verificationMode || undefined);
@@ -87,6 +106,8 @@ export class DashboardService {
         cardUsers,
         totalEvents,
         todayEvents,
+        presentToday: uniqueEmployeesPresentToday,
+        failedAttemptsToday: failedAttemptsCount,
       },
       recentEvents: formattedRecentEvents,
       serverTime: new Date().toISOString(),

@@ -80,34 +80,99 @@ router.get('/:employeeNo', async (req: Request, res: Response, next: NextFunctio
   }
 });
 
-/**
- * POST /api/users (Unverified endpoint)
- */
-router.post('/', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    await userService.createUser(req.body);
-  } catch (error) {
-    next(error);
-  }
+const createUserBodySchema = z.object({
+  employeeNo: z.string().min(1, 'Employee ID is required'),
+  name: z.string().min(1, 'Employee Name is required'),
+  userType: z.string().optional().default('normal'),
+  enabled: z.boolean().optional().default(true),
+  gender: z.string().optional(),
+  groupId: z.number().optional().default(1),
+  numOfCard: z.number().optional().default(0),
+});
+
+const updateUserBodySchema = z.object({
+  name: z.string().optional(),
+  userType: z.string().optional(),
+  enabled: z.boolean().optional(),
+  gender: z.string().optional(),
+  groupId: z.number().optional(),
 });
 
 /**
- * PUT /api/users/:employeeNo (Unverified endpoint)
+ * POST /api/users
+ * Create a new employee/user
  */
-router.put('/:employeeNo', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    await userService.updateUser(req.params.employeeNo, req.body);
-  } catch (error) {
-    next(error);
+router.post(
+  '/',
+  validate({ body: createUserBodySchema as any }),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const newUser = await userService.createUser(req.body);
+      res.status(201).json({
+        success: true,
+        data: newUser,
+        message: 'Employee registered successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
   }
-});
+);
 
 /**
- * DELETE /api/users/:employeeNo (Unverified endpoint)
+ * PUT /api/users/:employeeNo
+ * Update employee details
+ */
+router.put(
+  '/:employeeNo',
+  validate({ body: updateUserBodySchema as any }),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const updatedUser = await userService.updateUser(req.params.employeeNo, req.body);
+      res.json({
+        success: true,
+        data: updatedUser,
+        message: 'Employee updated successfully',
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * PATCH /api/users/:employeeNo/status
+ * Quick toggle access status (enabled/disabled)
+ */
+router.patch(
+  '/:employeeNo/status',
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { enabled } = req.body;
+      const updatedUser = await userService.toggleUserStatus(req.params.employeeNo, !!enabled);
+      res.json({
+        success: true,
+        data: updatedUser,
+        message: `Access ${enabled ? 'enabled' : 'disabled'} successfully`,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
+/**
+ * DELETE /api/users/:employeeNo
+ * Remove employee
  */
 router.delete('/:employeeNo', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    await userService.deleteUser(req.params.employeeNo);
+    const result = await userService.deleteUser(req.params.employeeNo);
+    res.json({
+      success: true,
+      data: result,
+      message: 'Employee removed successfully',
+    });
   } catch (error) {
     next(error);
   }

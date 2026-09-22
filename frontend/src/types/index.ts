@@ -83,6 +83,8 @@ export interface DashboardSummaryData {
     cardUsers: number;
     totalEvents: number;
     todayEvents: number;
+    presentToday?: number;
+    failedAttemptsToday?: number;
   };
   recentEvents: Array<{
     id: string;

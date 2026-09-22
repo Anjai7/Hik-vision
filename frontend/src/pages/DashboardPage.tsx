@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import {
   Users,
-  Fingerprint,
-  ScanFace,
-  CreditCard,
-  CalendarCheck,
+  Activity,
+  ShieldCheck,
+  ShieldAlert,
   Clock,
   RefreshCw,
   Cpu,
   AlertTriangle,
+  ArrowRight,
 } from 'lucide-react';
 import { dashboardApi } from '../api/dashboardApi';
 import { DashboardSummaryData } from '../types';
@@ -68,52 +68,54 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
         </div>
       )}
 
-      {/* KPI Stats Grid */}
-      <div className="stats-grid">
+      {/* Primary KPI Grid */}
+      <div className="stats-grid" style={{ marginBottom: '16px' }}>
         <StatCard
-          title="Total Registered Users"
+          title="Total Registered Employees"
           value={summary?.stats.totalUsers ?? 0}
-          icon={<Users size={20} color="#3b82f6" />}
-          iconBg="rgba(59, 130, 246, 0.15)"
-          meta="Synchronized from terminal"
+          icon={<Users size={20} color="#38bdf8" />}
+          iconBg="rgba(56, 189, 248, 0.15)"
+          meta="Enrolled team members"
+          onClick={onNavigateToUsers}
         />
         <StatCard
-          title="Fingerprint Enrolled"
-          value={summary?.stats.fingerprintUsers ?? 0}
-          icon={<Fingerprint size={20} color="#10b981" />}
+          title="Present in Office Today"
+          value={summary?.stats.presentToday ?? 0}
+          icon={<Activity size={20} color="#10b981" />}
           iconBg="rgba(16, 185, 129, 0.15)"
-          meta="Active biometrics"
+          meta="Scanned in today"
         />
+        <StatCard
+          title="Total Punches Today"
+          value={summary?.stats.todayEvents ?? 0}
+          icon={<Clock size={20} color="#8b5cf6" />}
+          iconBg="rgba(139, 92, 246, 0.15)"
+          meta="Logged check-in / outs"
+        />
+        <StatCard
+          title="Denied Attempts"
+          value={summary?.stats.failedAttemptsToday ?? 0}
+          icon={<ShieldAlert size={20} color="#ef4444" />}
+          iconBg="rgba(239, 68, 68, 0.15)"
+          meta="Unauthorized / rejected"
+        />
+      </div>
+
+      {/* Hardware / Device Info Bar */}
+      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
         <StatCard
           title="Face Enrolled"
           value={summary?.stats.faceUsers ?? 0}
-          icon={<ScanFace size={20} color="#8b5cf6" />}
-          iconBg="rgba(139, 92, 246, 0.15)"
-          meta="Facial profiles"
+          icon={<ShieldCheck size={20} color="#10b981" />}
+          iconBg="rgba(16, 185, 129, 0.15)"
+          meta="Facial biometrics active"
         />
         <StatCard
           title="Card Enrolled"
           value={summary?.stats.cardUsers ?? 0}
-          icon={<CreditCard size={20} color="#f59e0b" />}
+          icon={<Users size={20} color="#f59e0b" />}
           iconBg="rgba(245, 158, 11, 0.15)"
-          meta="RFID / Mifare cards"
-        />
-      </div>
-
-      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
-        <StatCard
-          title="Total Events Recorded"
-          value={summary?.stats.totalEvents ?? 0}
-          icon={<CalendarCheck size={20} color="#38bdf8" />}
-          iconBg="rgba(56, 189, 248, 0.15)"
-          meta="Stored in database"
-        />
-        <StatCard
-          title="Today's Terminal Events"
-          value={summary?.stats.todayEvents ?? 0}
-          icon={<Clock size={20} color="#ec4899" />}
-          iconBg="rgba(236, 72, 153, 0.15)"
-          meta="Logged since midnight"
+          meta="RFID badge users"
         />
         <div className="stat-card" style={{ justifyContent: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
@@ -133,21 +135,28 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
       <div className="table-card" style={{ marginTop: '16px' }}>
         <div className="table-header-bar">
           <div>
-            <div className="table-title">Recent Terminal Activity</div>
+            <div className="table-title">Recent Authentication Stream</div>
             <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '2px' }}>
-              Latest access and authentication events (Neutral ISAPI descriptors)
+              Real-time feed of successful and denied entry scans
             </div>
           </div>
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button className="btn btn-secondary" onClick={onNavigateToUsers}>
-              Manage Users
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <button
+              className="btn btn-outline"
+              onClick={onNavigateToAttendance}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px' }}
+            >
+              <span>View Timesheet</span>
+              <ArrowRight size={13} />
             </button>
-            <button className="btn btn-secondary" onClick={onNavigateToAttendance}>
-              View All Events
-            </button>
-            <button className="btn btn-primary" onClick={onTriggerSync} disabled={isSyncing}>
-              <RefreshCw size={14} className={isSyncing ? 'spinner' : ''} />
-              Sync Now
+            <button
+              className="btn btn-secondary"
+              onClick={onTriggerSync}
+              disabled={isSyncing}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <RefreshCw size={13} className={isSyncing ? 'spin' : ''} />
+              Refresh
             </button>
           </div>
         </div>
@@ -157,9 +166,9 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
             <thead>
               <tr>
                 <th>Time</th>
-                <th>Employee No</th>
+                <th>Employee ID</th>
                 <th>Name</th>
-                <th>Event Description</th>
+                <th>Authentication Result</th>
                 <th>Verification Mode</th>
                 <th>Door</th>
               </tr>
@@ -169,21 +178,16 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                 <tr>
                   <td colSpan={6} style={{ textAlign: 'center', padding: '32px' }}>
                     <div className="spinner" style={{ margin: '0 auto 8px auto' }} />
-                    <span style={{ color: 'var(--text-muted)' }}>Loading recent events...</span>
+                    <span style={{ color: 'var(--text-muted)' }}>Loading recent activity...</span>
                   </td>
                 </tr>
               ) : summary?.recentEvents && summary.recentEvents.length > 0 ? (
                 summary.recentEvents.map((ev) => (
                   <tr key={ev.id}>
                     <td>
-                      <div style={{ display: 'flex', flexDirection: 'column' }}>
-                        <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 600, color: '#38bdf8' }}>
-                          {ev.timeFormatted || new Date(ev.eventTime).toLocaleTimeString()}
-                        </span>
-                        <span style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                          Local: {new Date(ev.eventTime).toLocaleTimeString()}
-                        </span>
-                      </div>
+                      <span style={{ fontFamily: 'var(--font-mono)', fontSize: '13px', fontWeight: 600, color: '#38bdf8' }}>
+                        {ev.timeFormatted || new Date(ev.eventTime).toLocaleTimeString()}
+                      </span>
                     </td>
                     <td>
                       <Badge variant="neutral">{ev.employeeNo}</Badge>
@@ -192,24 +196,30 @@ export const DashboardPage: React.FC<DashboardPageProps> = ({
                     <td>
                       <Badge
                         variant={
-                          ev.eventDescription.includes('Granted') || ev.eventDescription.includes('Unlocked')
-                            ? 'success'
-                            : ev.eventDescription.includes('Denied') || ev.eventDescription.includes('Failed')
+                          ev.eventDescription.includes('Fail') || ev.eventDescription.includes('Denied')
                             ? 'danger'
-                            : 'info'
+                            : 'success'
                         }
                       >
-                        {ev.eventDescription}
+                        {ev.eventDescription.includes('Fail') || ev.eventDescription.includes('Denied')
+                          ? 'Failed Authentication'
+                          : 'Successful Authentication'}
                       </Badge>
                     </td>
-                    <td style={{ color: 'var(--text-secondary)' }}>{ev.verificationModeLabel}</td>
+                    <td>
+                      <Badge variant="neutral">
+                        {ev.verificationModeLabel === 'faceOrFpOrCardOrPw'
+                          ? 'Face'
+                          : ev.verificationModeLabel || 'Face'}
+                      </Badge>
+                    </td>
                     <td>Door {ev.doorNo ?? 1}</td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={6} className="empty-state">
-                    No attendance events recorded yet. Click "Sync Now" to import from device.
+                  <td colSpan={6} style={{ textAlign: 'center', padding: '32px' }}>
+                    <span style={{ color: 'var(--text-muted)' }}>No recent activity recorded today</span>
                   </td>
                 </tr>
               )}

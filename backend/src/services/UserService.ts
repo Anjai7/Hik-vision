@@ -81,38 +81,112 @@ export class UserService {
     return user;
   }
 
-  /**
-   * UNVERIFIED MUTATION: Create user
-   * Marked unverified as per specification.
-   */
-  public async createUser(data: any): Promise<never> {
-    throw new HikvisionError(
-      'User creation directly to terminal is unverified on DS-K1T320MFWX firmware V3.5.2. Biometric and permission endpoints must be validated prior to enabling write operations.',
-      'UNVERIFIED_ENDPOINT',
-      501
-    );
+  public async createUser(data: {
+    employeeNo: string;
+    name: string;
+    userType?: string;
+    enabled?: boolean;
+    gender?: string | null;
+    groupId?: number | null;
+    numOfCard?: number;
+  }) {
+    const device = await deviceService.getOrCreateDefaultDevice();
+    const existing = await prisma.user.findFirst({
+      where: {
+        deviceId: device.id,
+        employeeNo: data.employeeNo.trim(),
+      },
+    });
+
+    if (existing) {
+      const err: any = new Error(`Employee with ID '${data.employeeNo}' already exists`);
+      err.statusCode = 409;
+      err.code = 'USER_ALREADY_EXISTS';
+      throw err;
+    }
+
+    const newUser = await prisma.user.create({
+      data: {
+        deviceId: device.id,
+        employeeNo: data.employeeNo.trim(),
+        name: data.name.trim(),
+        userType: data.userType || 'normal',
+        enabled: data.enabled !== undefined ? data.enabled : true,
+        gender: data.gender || null,
+        groupId: data.groupId ? Number(data.groupId) : 1,
+        numOfCard: data.numOfCard ? Number(data.numOfCard) : 0,
+      },
+      include: {
+        device: {
+          select: { name: true, model: true },
+        },
+      },
+    });
+
+    return newUser;
   }
 
-  /**
-   * UNVERIFIED MUTATION: Update user
-   */
-  public async updateUser(employeeNo: string, data: any): Promise<never> {
-    throw new HikvisionError(
-      `User update for employeeNo ${employeeNo} is unverified on DS-K1T320MFWX firmware V3.5.2.`,
-      'UNVERIFIED_ENDPOINT',
-      501
-    );
+  public async updateUser(
+    employeeNo: string,
+    data: {
+      name?: string;
+      userType?: string;
+      enabled?: boolean;
+      gender?: string | null;
+      groupId?: number | null;
+    }
+  ) {
+    const existing = await prisma.user.findFirst({
+      where: { employeeNo },
+    });
+
+    if (!existing) {
+      const err: any = new Error(`Employee '${employeeNo}' not found`);
+      err.statusCode = 404;
+      err.code = 'USER_NOT_FOUND';
+      throw err;
+    }
+
+    const updated = await prisma.user.update({
+      where: { id: existing.id },
+      data: {
+        name: data.name !== undefined ? data.name.trim() : undefined,
+        userType: data.userType !== undefined ? data.userType : undefined,
+        enabled: data.enabled !== undefined ? data.enabled : undefined,
+        gender: data.gender !== undefined ? data.gender : undefined,
+        groupId: data.groupId !== undefined ? Number(data.groupId) : undefined,
+      },
+      include: {
+        device: {
+          select: { name: true, model: true },
+        },
+      },
+    });
+
+    return updated;
   }
 
-  /**
-   * UNVERIFIED MUTATION: Delete user
-   */
-  public async deleteUser(employeeNo: string): Promise<never> {
-    throw new HikvisionError(
-      `User deletion for employeeNo ${employeeNo} is unverified on DS-K1T320MFWX firmware V3.5.2.`,
-      'UNVERIFIED_ENDPOINT',
-      501
-    );
+  public async deleteUser(employeeNo: string) {
+    const existing = await prisma.user.findFirst({
+      where: { employeeNo },
+    });
+
+    if (!existing) {
+      const err: any = new Error(`Employee '${employeeNo}' not found`);
+      err.statusCode = 404;
+      err.code = 'USER_NOT_FOUND';
+      throw err;
+    }
+
+    await prisma.user.delete({
+      where: { id: existing.id },
+    });
+
+    return { success: true, deletedEmployeeNo: employeeNo };
+  }
+
+  public async toggleUserStatus(employeeNo: string, enabled: boolean) {
+    return this.updateUser(employeeNo, { enabled });
   }
 }
 
