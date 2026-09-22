@@ -52,6 +52,9 @@ export class AttendanceService {
 
     if (params.minor !== undefined) {
       where.minor = params.minor;
+    } else {
+      // Exclude background system/door sensor noise (unlocked/locked)
+      where.minor = { notIn: [1, 2, 21, 22] };
     }
 
     const [total, events] = await Promise.all([
@@ -116,8 +119,10 @@ export class AttendanceService {
         localTimeFormatted: eventDateObj.toLocaleTimeString(),
         major: ev.major,
         minor: ev.minor,
-        eventCategory: descInfo.category,
-        eventDescription: descInfo.description,
+        status: descInfo.status,
+        statusLabel: descInfo.statusLabel,
+        eventCategory: 'Access Control',
+        eventDescription: descInfo.statusLabel,
         verificationMode: ev.verificationMode || 'unspecified',
         verificationModeLabel: descInfo.verifyModeLabel,
         doorNo: ev.doorNo,

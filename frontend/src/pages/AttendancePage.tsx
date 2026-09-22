@@ -123,7 +123,7 @@ export const AttendancePage: React.FC = () => {
       <div className="alert-banner" style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.25)', color: '#93c5fd' }}>
         <CalendarCheck size={18} />
         <span>
-          Event records use raw Hikvision ISAPI descriptors without directional assumptions (e.g. IN/OUT). Punch state logic can be safely attached once your organization's shift policies are defined.
+          Live Authentication Logs: Showing verified successful and failed access events pushed directly from your Hikvision terminal.
         </span>
       </div>
 
@@ -249,7 +249,7 @@ export const AttendancePage: React.FC = () => {
                 <th>Time</th>
                 <th>Employee ID</th>
                 <th>Employee Name</th>
-                <th>Event Description</th>
+                <th>Authentication Result</th>
                 <th>Verification Mode</th>
                 <th>Door</th>
                 <th>Device</th>
@@ -289,17 +289,27 @@ export const AttendancePage: React.FC = () => {
                     <td>
                       <Badge
                         variant={
-                          ev.eventDescription.includes('Granted') || ev.eventDescription.includes('Unlocked')
-                            ? 'success'
-                            : ev.eventDescription.includes('Denied') || ev.eventDescription.includes('Failed')
+                          ev.status === 'FAILED' ||
+                          ev.eventDescription.includes('Fail') ||
+                          ev.eventDescription.includes('Denied')
                             ? 'danger'
-                            : 'info'
+                            : 'success'
                         }
                       >
-                        {ev.eventDescription}
+                        {ev.status === 'FAILED' ||
+                        ev.eventDescription.includes('Fail') ||
+                        ev.eventDescription.includes('Denied')
+                          ? 'Failed Authentication'
+                          : 'Successful Authentication'}
                       </Badge>
                     </td>
-                    <td style={{ color: 'var(--text-secondary)' }}>{ev.verificationModeLabel}</td>
+                    <td style={{ color: 'var(--text-secondary)' }}>
+                      <Badge variant="neutral">
+                        {ev.verificationModeLabel === 'faceOrFpOrCardOrPw'
+                          ? 'Face'
+                          : ev.verificationModeLabel || 'Face'}
+                      </Badge>
+                    </td>
                     <td>Door {ev.doorNo ?? 1}</td>
                     <td style={{ color: 'var(--text-muted)', fontSize: '12px' }}>{ev.deviceModel}</td>
                     <td>

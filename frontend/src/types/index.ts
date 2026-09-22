@@ -52,6 +52,8 @@ export interface AttendanceEventData {
   localTimeFormatted?: string;
   major: number;
   minor: number;
+  status?: 'SUCCESS' | 'FAILED';
+  statusLabel?: string;
   eventCategory: string;
   eventDescription: string;
   verificationMode: string;

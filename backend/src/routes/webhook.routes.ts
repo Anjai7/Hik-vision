@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express';
 import multer from 'multer';
 import { prisma } from '../db';
 import { deviceService } from '../services/DeviceService';
+import { isAuthenticationEvent } from '../hikvision/eventMappings';
 import { logger } from '../utils/logger';
 
 const router = Router();
@@ -184,6 +185,12 @@ const handleHikvisionWebhook = async (req: Request, res: Response, next: NextFun
     let savedCount = 0;
 
     for (const ev of parsedEvents) {
+      // Only process authentication events (ignore door status, background sensor noise, etc.)
+      if (!isAuthenticationEvent(ev.major, ev.minor)) {
+        logger.debug(`Skipping non-authentication event [major: ${ev.major}, minor: ${ev.minor}]`);
+        continue;
+      }
+
       // 1. Strict Serial Number deduplication: If this serial number has already been recorded for this device, skip it!
       let existing = null;
       if (ev.serialNo !== null && ev.serialNo !== undefined && ev.serialNo > 0) {
