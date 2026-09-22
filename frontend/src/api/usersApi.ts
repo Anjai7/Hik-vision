@@ -18,6 +18,8 @@ export interface CreateUserPayload {
   gender?: string | null;
   groupId?: number | null;
   numOfCard?: number;
+  validFrom?: string | null;
+  validTo?: string | null;
 }
 
 export interface UpdateUserPayload {
@@ -26,6 +28,8 @@ export interface UpdateUserPayload {
   enabled?: boolean;
   gender?: string | null;
   groupId?: number | null;
+  validFrom?: string | null;
+  validTo?: string | null;
 }
 
 export const usersApi = {
@@ -59,6 +63,16 @@ export const usersApi = {
 
   toggleStatus: async (employeeNo: string, enabled: boolean): Promise<UserData> => {
     const res = await apiClient.patch<ApiResponse<UserData>>(`/users/${employeeNo}/status`, { enabled });
+    return res.data.data;
+  },
+
+  expireUser: async (employeeNo: string): Promise<UserData> => {
+    const res = await apiClient.post<ApiResponse<UserData>>(`/users/${employeeNo}/expire`);
+    return res.data.data;
+  },
+
+  grantAccess: async (employeeNo: string, years = 1): Promise<UserData> => {
+    const res = await apiClient.post<ApiResponse<UserData>>(`/users/${employeeNo}/grant`, { years });
     return res.data.data;
   },
 

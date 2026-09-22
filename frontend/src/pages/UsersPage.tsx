@@ -12,6 +12,9 @@ import {
   CheckCircle2,
   Shield,
   ShieldOff,
+  Clock,
+  RefreshCw,
+  Check,
 } from 'lucide-react';
 import { usersApi, GetUsersParams, CreateUserPayload, UpdateUserPayload } from '../api/usersApi';
 import { UserData } from '../types';
@@ -45,6 +48,8 @@ export const UsersPage: React.FC = () => {
     enabled: true,
     groupId: 1,
     numOfCard: 0,
+    validFrom: '',
+    validTo: '',
   });
 
   const [selectedUser, setSelectedUser] = useState<UserData | null>(null);
@@ -87,6 +92,8 @@ export const UsersPage: React.FC = () => {
 
   // Open Add Modal
   const openAddModal = () => {
+    const today = new Date().toISOString().split('T')[0];
+    const nextYear = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     setFormData({
       employeeNo: '',
       name: '',
@@ -95,6 +102,8 @@ export const UsersPage: React.FC = () => {
       enabled: true,
       groupId: 1,
       numOfCard: 0,
+      validFrom: today,
+      validTo: nextYear,
     });
     setIsAddModalOpen(true);
   };
@@ -110,6 +119,8 @@ export const UsersPage: React.FC = () => {
       enabled: user.enabled,
       groupId: user.groupId || 1,
       numOfCard: user.numOfCard || 0,
+      validFrom: user.validFrom ? new Date(user.validFrom).toISOString().split('T')[0] : '',
+      validTo: user.validTo ? new Date(user.validTo).toISOString().split('T')[0] : '',
     });
     setIsEditModalOpen(true);
   };
@@ -156,6 +167,8 @@ export const UsersPage: React.FC = () => {
         gender: formData.gender,
         enabled: formData.enabled,
         groupId: formData.groupId,
+        validFrom: formData.validFrom || null,
+        validTo: formData.validTo || null,
       };
       await usersApi.updateUser(selectedUser.employeeNo, payload);
       setSuccessMsg(`Employee '${formData.name}' updated successfully.`);
@@ -186,6 +199,34 @@ export const UsersPage: React.FC = () => {
     }
   };
 
+  // Expire User Access (Blocks on terminal)
+  const handleExpireUser = async (user: UserData) => {
+    try {
+      setActionLoading(true);
+      await usersApi.expireUser(user.employeeNo);
+      setSuccessMsg(`Terminal validity for '${user.name}' expired. Access will be blocked on physical terminal.`);
+      await fetchUsers();
+    } catch (err: any) {
+      setError(err.message || 'Failed to expire user');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Grant Access (Extends validity)
+  const handleGrantAccess = async (user: UserData, years = 1) => {
+    try {
+      setActionLoading(true);
+      await usersApi.grantAccess(user.employeeNo, years);
+      setSuccessMsg(`Granted ${years} year(s) terminal access for '${user.name}'.`);
+      await fetchUsers();
+    } catch (err: any) {
+      setError(err.message || 'Failed to extend access');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   // Quick Toggle Status Handler
   const handleToggleStatus = async (user: UserData) => {
     try {
@@ -197,6 +238,7 @@ export const UsersPage: React.FC = () => {
       setSuccessMsg(
         `Access for '${user.name}' has been ${nextStatus ? 'activated' : 'suspended'}.`
       );
+      await fetchUsers();
     } catch (err: any) {
       setError(err.message || 'Failed to change access status');
     }
@@ -284,6 +326,7 @@ export const UsersPage: React.FC = () => {
                 <th>Employee ID</th>
                 <th>Full Name</th>
                 <th>Access Status</th>
+                <th>Valid Period & Terminal Access</th>
                 <th>Role / Type</th>
                 <th>Enrolled Biometrics</th>
                 <th>Department</th>
@@ -293,7 +336,7 @@ export const UsersPage: React.FC = () => {
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: 'center', padding: '36px' }}>
+                  <td colSpan={8} style={{ textAlign: 'center', padding: '36px' }}>
                     <div className="spinner" style={{ margin: '0 auto 8px auto' }} />
                     <span style={{ color: 'var(--text-muted)' }}>Loading employee roster...</span>
                   </td>
@@ -326,6 +369,52 @@ export const UsersPage: React.FC = () => {
                         {u.enabled ? <Shield size={12} /> : <ShieldOff size={12} />}
                         <span>{u.enabled ? 'Active' : 'Suspended'}</span>
                       </button>
+                    </td>
+                    <td>
+                      {(() => {
+                        const isExpired = !u.enabled || (u.validTo && new Date(u.validTo) < new Date());
+                        const dateStr = u.validTo ? new Date(u.validTo).toLocaleDateString() : 'No expiry';
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <Badge variant={isExpired ? 'danger' : 'success'}>
+                                <Clock size={11} style={{ marginRight: '4px' }} />
+                                {isExpired ? 'Expired / Blocked' : `Valid to ${dateStr}`}
+                              </Badge>
+                              {u.terminalSyncStatus === 'PENDING' ? (
+                                <span style={{ fontSize: '11px', color: '#f59e0b', display: 'inline-flex', alignItems: 'center', gap: '3px' }} title="Change queued for physical terminal sync">
+                                  <RefreshCw size={10} /> Pending
+                                </span>
+                              ) : (
+                                <span style={{ fontSize: '11px', color: '#10b981', display: 'inline-flex', alignItems: 'center', gap: '3px' }} title="Synced to terminal memory">
+                                  <Check size={10} /> Synced
+                                </span>
+                              )}
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px', marginTop: '2px' }}>
+                              {isExpired ? (
+                                <button
+                                  onClick={() => handleGrantAccess(u, 1)}
+                                  className="btn btn-outline"
+                                  style={{ fontSize: '10.5px', padding: '1px 6px', color: '#10b981', borderColor: 'rgba(16,185,129,0.3)', borderRadius: '4px' }}
+                                  title="Extend validity +1 year to re-enable access"
+                                >
+                                  Grant 1 Year
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => handleExpireUser(u)}
+                                  className="btn btn-outline"
+                                  style={{ fontSize: '10.5px', padding: '1px 6px', color: '#ef4444', borderColor: 'rgba(239,68,68,0.3)', borderRadius: '4px' }}
+                                  title="Expire validity on terminal (blocks scan & keeps door locked)"
+                                >
+                                  Expire (Block)
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </td>
                     <td>
                       <span style={{ textTransform: 'capitalize', color: 'var(--text-secondary)' }}>
@@ -480,6 +569,59 @@ export const UsersPage: React.FC = () => {
             </div>
           </div>
 
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
+                Valid From
+              </label>
+              <input
+                type="date"
+                className="input-field"
+                value={formData.validFrom || ''}
+                onChange={(e) => setFormData({ ...formData, validFrom: e.target.value })}
+                style={{ width: '100%' }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
+                Valid Until (Terminal Expiry)
+              </label>
+              <input
+                type="date"
+                className="input-field"
+                value={formData.validTo || ''}
+                onChange={(e) => setFormData({ ...formData, validTo: e.target.value })}
+                style={{ width: '100%' }}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
+            <button
+              type="button"
+              className="btn btn-outline"
+              style={{ fontSize: '11.5px', padding: '3px 8px' }}
+              onClick={() => {
+                const now = new Date().toISOString().split('T')[0];
+                const nextYear = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                setFormData({ ...formData, enabled: true, validFrom: now, validTo: nextYear });
+              }}
+            >
+              Grant 1 Year
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline"
+              style={{ fontSize: '11.5px', padding: '3px 8px', color: '#ef4444', borderColor: 'rgba(239,68,68,0.3)' }}
+              onClick={() => {
+                const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                setFormData({ ...formData, enabled: false, validTo: yesterday });
+              }}
+            >
+              Expire Now (Block Terminal)
+            </button>
+          </div>
+
           <div>
             <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
               Access Permission
@@ -557,6 +699,59 @@ export const UsersPage: React.FC = () => {
                 <option value="other">Other</option>
               </select>
             </div>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
+                Valid From
+              </label>
+              <input
+                type="date"
+                className="input-field"
+                value={formData.validFrom || ''}
+                onChange={(e) => setFormData({ ...formData, validFrom: e.target.value })}
+                style={{ width: '100%' }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
+                Valid Until (Terminal Expiry)
+              </label>
+              <input
+                type="date"
+                className="input-field"
+                value={formData.validTo || ''}
+                onChange={(e) => setFormData({ ...formData, validTo: e.target.value })}
+                style={{ width: '100%' }}
+              />
+            </div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
+            <button
+              type="button"
+              className="btn btn-outline"
+              style={{ fontSize: '11.5px', padding: '3px 8px' }}
+              onClick={() => {
+                const now = new Date().toISOString().split('T')[0];
+                const nextYear = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                setFormData({ ...formData, enabled: true, validFrom: now, validTo: nextYear });
+              }}
+            >
+              Grant 1 Year
+            </button>
+            <button
+              type="button"
+              className="btn btn-outline"
+              style={{ fontSize: '11.5px', padding: '3px 8px', color: '#ef4444', borderColor: 'rgba(239,68,68,0.3)' }}
+              onClick={() => {
+                const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                setFormData({ ...formData, enabled: false, validTo: yesterday });
+              }}
+            >
+              Expire Now (Block Terminal)
+            </button>
           </div>
 
           <div>

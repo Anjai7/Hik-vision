@@ -28,6 +28,10 @@ export interface UserData {
   numOfFP: number;
   numOfFace: number;
   numOfCard: number;
+  validFrom?: string | null;
+  validTo?: string | null;
+  terminalSyncStatus?: string;
+  lastTerminalSyncAt?: string | null;
   createdAt: string;
   updatedAt: string;
   device?: {

@@ -38,11 +38,15 @@ model User {
   groupId     Int?
   numOfFP     Int      @default(0)
   numOfFace   Int      @default(0)
-  numOfCard   Int      @default(0)
-  deviceId    String
-  device      Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  numOfCard           Int       @default(0)
+  validFrom           DateTime?
+  validTo             DateTime?
+  terminalSyncStatus  String    @default("SYNCED")
+  lastTerminalSyncAt  DateTime?
+  deviceId            String
+  device              Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   @@unique([deviceId, employeeNo])
   @@index([employeeNo])

@@ -128,13 +128,40 @@ export class HikvisionUsers {
   }
 
   /**
-   * UNVERIFIED: Delete user from terminal
+   * Update user validity time period on the physical terminal
+   * Setting endTime in the past (e.g. yesterday) expires/blocks the user locally on the device!
    */
-  public async deleteTerminalUser(employeeNo: string): Promise<never> {
-    throw new HikvisionError(
-      `Terminal user deletion (/ISAPI/AccessControl/UserInfo/Delete) is unverified on DS-K1T320MFWX firmware V3.5.2 for employeeNo: ${employeeNo}.`,
-      'UNVERIFIED_ENDPOINT',
-      501
+  public async updateUserValidity(employeeNo: string, options: {
+    beginTime?: string; // Format: YYYY-MM-DDTHH:mm:ss
+    endTime?: string;   // Format: YYYY-MM-DDTHH:mm:ss
+    enable?: boolean;
+    name?: string;
+    userType?: string;
+  }): Promise<any> {
+    const beginTime = options.beginTime || '2020-01-01T00:00:00';
+    const endTime = options.endTime || '2035-12-31T23:59:59';
+    const enable = options.enable !== undefined ? options.enable : true;
+
+    const payload: any = {
+      UserInfo: {
+        employeeNo,
+        Valid: {
+          enable,
+          beginTime,
+          endTime,
+          timeType: 'local',
+        },
+      },
+    };
+
+    if (options.name) payload.UserInfo.name = options.name;
+    if (options.userType) payload.UserInfo.userType = options.userType;
+
+    const res = await this.client.put<any>(
+      '/ISAPI/AccessControl/UserInfo/Modify?format=json',
+      payload
     );
+
+    return res;
   }
 }

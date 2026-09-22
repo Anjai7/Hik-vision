@@ -89,6 +89,8 @@ export class UserService {
     gender?: string | null;
     groupId?: number | null;
     numOfCard?: number;
+    validFrom?: string | Date | null;
+    validTo?: string | Date | null;
   }) {
     const device = await deviceService.getOrCreateDefaultDevice();
     const existing = await prisma.user.findFirst({
@@ -115,6 +117,9 @@ export class UserService {
         gender: data.gender || null,
         groupId: data.groupId ? Number(data.groupId) : 1,
         numOfCard: data.numOfCard ? Number(data.numOfCard) : 0,
+        validFrom: data.validFrom ? new Date(data.validFrom) : new Date('2020-01-01T00:00:00Z'),
+        validTo: data.validTo ? new Date(data.validTo) : new Date('2035-12-31T23:59:59Z'),
+        terminalSyncStatus: 'PENDING',
       },
       include: {
         device: {
@@ -134,6 +139,8 @@ export class UserService {
       enabled?: boolean;
       gender?: string | null;
       groupId?: number | null;
+      validFrom?: string | Date | null;
+      validTo?: string | Date | null;
     }
   ) {
     const existing = await prisma.user.findFirst({
@@ -155,6 +162,9 @@ export class UserService {
         enabled: data.enabled !== undefined ? data.enabled : undefined,
         gender: data.gender !== undefined ? data.gender : undefined,
         groupId: data.groupId !== undefined ? Number(data.groupId) : undefined,
+        validFrom: data.validFrom !== undefined ? (data.validFrom ? new Date(data.validFrom) : null) : undefined,
+        validTo: data.validTo !== undefined ? (data.validTo ? new Date(data.validTo) : null) : undefined,
+        terminalSyncStatus: 'PENDING',
       },
       include: {
         device: {
@@ -186,7 +196,49 @@ export class UserService {
   }
 
   public async toggleUserStatus(employeeNo: string, enabled: boolean) {
-    return this.updateUser(employeeNo, { enabled });
+    // When disabling, set validTo to yesterday (expires locally on terminal)
+    // When enabling, extend validTo to 2035
+    const validTo = enabled ? new Date('2035-12-31T23:59:59Z') : new Date(Date.now() - 24 * 60 * 60 * 1000);
+    return this.updateUser(employeeNo, { enabled, validTo });
+  }
+
+  public async expireUser(employeeNo: string) {
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    return this.updateUser(employeeNo, {
+      enabled: false,
+      validTo: yesterday,
+    });
+  }
+
+  public async grantAccess(employeeNo: string, years = 1) {
+    const now = new Date();
+    const future = new Date();
+    future.setFullYear(future.getFullYear() + years);
+    return this.updateUser(employeeNo, {
+      enabled: true,
+      validFrom: now,
+      validTo: future,
+    });
+  }
+
+  public async markUserSynced(employeeNo: string) {
+    const existing = await prisma.user.findFirst({ where: { employeeNo } });
+    if (!existing) return null;
+
+    return prisma.user.update({
+      where: { id: existing.id },
+      data: {
+        terminalSyncStatus: 'SYNCED',
+        lastTerminalSyncAt: new Date(),
+      },
+    });
+  }
+
+  public async getPendingSyncUsers() {
+    return prisma.user.findMany({
+      where: { terminalSyncStatus: 'PENDING' },
+      include: { device: true },
+    });
   }
 }
 

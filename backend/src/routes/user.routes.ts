@@ -88,6 +88,8 @@ const createUserBodySchema = z.object({
   gender: z.string().optional(),
   groupId: z.number().optional().default(1),
   numOfCard: z.number().optional().default(0),
+  validFrom: z.string().optional().nullable(),
+  validTo: z.string().optional().nullable(),
 });
 
 const updateUserBodySchema = z.object({
@@ -96,6 +98,8 @@ const updateUserBodySchema = z.object({
   enabled: z.boolean().optional(),
   gender: z.string().optional(),
   groupId: z.number().optional(),
+  validFrom: z.string().optional().nullable(),
+  validTo: z.string().optional().nullable(),
 });
 
 /**
@@ -160,6 +164,73 @@ router.patch(
     }
   }
 );
+
+/**
+ * POST /api/users/:employeeNo/expire
+ * Immediately expire/block user validity
+ */
+router.post('/:employeeNo/expire', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const updatedUser = await userService.expireUser(req.params.employeeNo);
+    res.json({
+      success: true,
+      data: updatedUser,
+      message: `Access expired/blocked for employee '${req.params.employeeNo}'`,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/users/:employeeNo/grant
+ * Grant/extend user validity
+ */
+router.post('/:employeeNo/grant', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const years = req.body?.years ? Number(req.body.years) : 1;
+    const updatedUser = await userService.grantAccess(req.params.employeeNo, years);
+    res.json({
+      success: true,
+      data: updatedUser,
+      message: `Access granted for ${years} year(s) for employee '${req.params.employeeNo}'`,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * GET /api/users/sync/pending
+ * Retrieve users pending terminal synchronization
+ */
+router.get('/sync/pending', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const pending = await userService.getPendingSyncUsers();
+    res.json({
+      success: true,
+      data: pending,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/users/:employeeNo/synced
+ * Mark user as synchronized with physical terminal
+ */
+router.post('/:employeeNo/synced', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const updated = await userService.markUserSynced(req.params.employeeNo);
+    res.json({
+      success: true,
+      data: updated,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
 
 /**
  * DELETE /api/users/:employeeNo
