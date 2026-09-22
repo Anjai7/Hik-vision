@@ -73,6 +73,13 @@ export const KNOWN_EVENT_CODES: Record<string, EventCodeDefinition> = {
     neutralDescription: 'Face Verification Failed',
     verified: false,
   },
+  '5:104': {
+    major: 5,
+    minor: 104,
+    category: 'Access Control',
+    neutralDescription: 'Face Authentication Passed',
+    verified: true,
+  },
 };
 
 /**
