@@ -182,6 +182,38 @@ router.post('/:employeeNo/expire', async (req: Request, res: Response, next: Nex
   }
 });
 
+const setAccessPeriodBodySchema = z.object({
+  validFrom: z.string().min(1, 'Valid From date is required'),
+  validTo: z.string().min(1, 'Valid To date is required'),
+  enabled: z.boolean().optional().default(true),
+});
+
+/**
+ * POST /api/users/:employeeNo/access-period
+ * Set custom access validity period and sync directly to terminal
+ */
+router.post(
+  '/:employeeNo/access-period',
+  validate({ body: setAccessPeriodBodySchema as any }),
+  async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      const { validFrom, validTo, enabled } = req.body;
+      const result = await userService.setAccessPeriod(req.params.employeeNo, {
+        validFrom,
+        validTo,
+        enabled,
+      });
+      res.json({
+        success: true,
+        data: result,
+        message: `Access period configured from ${validFrom} to ${validTo} for employee '${req.params.employeeNo}'`,
+      });
+    } catch (error) {
+      next(error);
+    }
+  }
+);
+
 /**
  * POST /api/users/:employeeNo/grant
  * Grant/extend user validity

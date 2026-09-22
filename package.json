@@ -9,6 +9,9 @@
     "prisma:generate": "npm --prefix backend run prisma:generate",
     "prisma:push": "npm --prefix backend run prisma:push",
     "test:webhook": "npm --prefix backend run test:webhook",
+    "sync-agent": "npm --prefix backend run sync-agent",
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
     "dev": "concurrently \"npm --prefix backend run dev\" \"npm --prefix frontend run dev\""
   },
   "dependencies": {
@@ -27,6 +30,7 @@
     "@types/multer": "^1.4.12",
     "@types/node": "^22.5.5",
     "@vercel/node": "^3.2.0",
+    "concurrently": "^8.2.2",
     "prisma": "^5.20.0",
     "typescript": "^5.6.2"
   }

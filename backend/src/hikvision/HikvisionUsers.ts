@@ -24,6 +24,20 @@ export interface UserSearchResult {
   raw: unknown;
 }
 
+export function formatHikvisionDateTime(date: Date | string | null | undefined, fallback: string): string {
+  if (!date) return fallback;
+  const d = typeof date === 'string' ? new Date(date) : date;
+  if (isNaN(d.getTime())) return fallback;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const YYYY = d.getFullYear();
+  const MM = pad(d.getMonth() + 1);
+  const DD = pad(d.getDate());
+  const hh = pad(d.getHours());
+  const mm = pad(d.getMinutes());
+  const ss = pad(d.getSeconds());
+  return `${YYYY}-${MM}-${DD}T${hh}:${mm}:${ss}`;
+}
+
 export class HikvisionUsers {
   constructor(private client: HikvisionClient) {}
 
@@ -121,13 +135,13 @@ export class HikvisionUsers {
     employeeNo: string;
     name: string;
     userType?: string;
-    validFrom?: string;
-    validTo?: string;
-    belongGroup?: number;
+    validFrom?: string | Date;
+    validTo?: string | Date;
+    belongGroup?: number | string;
     doorRight?: string;
   }): Promise<any> {
-    const beginTime = user.validFrom || '2020-01-01T00:00:00';
-    const endTime = user.validTo || '2035-12-31T23:59:59';
+    const beginTime = formatHikvisionDateTime(user.validFrom, '2020-01-01T00:00:00');
+    const endTime = formatHikvisionDateTime(user.validTo, '2035-12-31T23:59:59');
     const payload = {
       UserInfo: {
         employeeNo: user.employeeNo,
@@ -140,7 +154,7 @@ export class HikvisionUsers {
           endTime,
           timeType: 'local',
         },
-        belongGroup: user.belongGroup || 1,
+        belongGroup: user.belongGroup !== undefined && user.belongGroup !== null ? String(user.belongGroup) : '',
         doorRight: user.doorRight || '1',
         RightPlan: [
           {
@@ -151,7 +165,12 @@ export class HikvisionUsers {
       },
     };
 
-    return this.client.post<any>('/ISAPI/AccessControl/UserInfo/Record?format=json', payload);
+    try {
+      return await this.client.post<any>('/ISAPI/AccessControl/UserInfo/Record?format=json', payload);
+    } catch (postErr: any) {
+      // If user already exists or Record fails, use SetUp (PUT) which creates or updates
+      return await this.client.put<any>('/ISAPI/AccessControl/UserInfo/SetUp?format=json', payload);
+    }
   }
 
   /**
@@ -171,14 +190,14 @@ export class HikvisionUsers {
    * Setting endTime in the past (e.g. yesterday) expires/blocks the user locally on the device!
    */
   public async updateUserValidity(employeeNo: string, options: {
-    beginTime?: string; // Format: YYYY-MM-DDTHH:mm:ss
-    endTime?: string;   // Format: YYYY-MM-DDTHH:mm:ss
+    beginTime?: string | Date; // Format: YYYY-MM-DDTHH:mm:ss
+    endTime?: string | Date;   // Format: YYYY-MM-DDTHH:mm:ss
     enable?: boolean;
     name?: string;
     userType?: string;
   }): Promise<any> {
-    const beginTime = options.beginTime || '2020-01-01T00:00:00';
-    const endTime = options.endTime || '2035-12-31T23:59:59';
+    const beginTime = formatHikvisionDateTime(options.beginTime, '2020-01-01T00:00:00');
+    const endTime = formatHikvisionDateTime(options.endTime, '2035-12-31T23:59:59');
     const enable = options.enable !== undefined ? options.enable : true;
 
     const payload: any = {
@@ -195,12 +214,43 @@ export class HikvisionUsers {
 
     if (options.name) payload.UserInfo.name = options.name;
     if (options.userType) payload.UserInfo.userType = options.userType;
+    payload.UserInfo.doorRight = '1';
+    payload.UserInfo.RightPlan = [{ doorNo: 1, planTemplateNo: '1' }];
 
-    const res = await this.client.put<any>(
-      '/ISAPI/AccessControl/UserInfo/Modify?format=json',
-      payload
-    );
+    try {
+      return await this.client.put<any>(
+        '/ISAPI/AccessControl/UserInfo/SetUp?format=json',
+        payload
+      );
+    } catch (setUpErr) {
+      // Fallback to Modify if SetUp is rejected
+      return await this.client.put<any>(
+        '/ISAPI/AccessControl/UserInfo/Modify?format=json',
+        payload
+      );
+    }
+  }
 
-    return res;
+  /**
+   * Directly block or grant access period on physical Hikvision terminal
+   */
+  public async setTerminalUserAccess(employeeNo: string, access: {
+    enable: boolean;
+    validFrom?: string | Date;
+    validTo?: string | Date;
+    name?: string;
+  }): Promise<any> {
+    const beginTime = formatHikvisionDateTime(access.validFrom, '2020-01-01T00:00:00');
+    // If disabled, set endTime to 2020-01-02 to invalidate on terminal clock
+    const endTime = access.enable
+      ? formatHikvisionDateTime(access.validTo, '2035-12-31T23:59:59')
+      : '2020-01-02T00:00:00';
+
+    return this.updateUserValidity(employeeNo, {
+      enable: access.enable,
+      beginTime,
+      endTime,
+      name: access.name,
+    });
   }
 }

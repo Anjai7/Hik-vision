@@ -15,6 +15,8 @@ import {
   Clock,
   RefreshCw,
   Check,
+  Calendar,
+  Key,
 } from 'lucide-react';
 import { usersApi, GetUsersParams, CreateUserPayload, UpdateUserPayload } from '../api/usersApi';
 import { UserData } from '../types';
@@ -22,7 +24,11 @@ import { Badge } from '../components/ui/Badge';
 import { Modal } from '../components/ui/Modal';
 import { Pagination } from '../components/ui/Pagination';
 
-export const UsersPage: React.FC = () => {
+export interface UsersPageProps {
+  onNavigateToAttendance?: (employeeNo: string) => void;
+}
+
+export const UsersPage: React.FC<UsersPageProps> = ({ onNavigateToAttendance }) => {
   const [users, setUsers] = useState<UserData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -36,8 +42,20 @@ export const UsersPage: React.FC = () => {
   // Modals state
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+
+  // Access period state for terminal configuration
+  const [periodData, setPeriodData] = useState<{
+    validFrom: string;
+    validTo: string;
+    enabled: boolean;
+  }>({
+    validFrom: '',
+    validTo: '',
+    enabled: true,
+  });
 
   // Form states
   const [formData, setFormData] = useState<CreateUserPayload>({
@@ -129,6 +147,42 @@ export const UsersPage: React.FC = () => {
   const openDeleteModal = (user: UserData) => {
     setSelectedUser(user);
     setIsDeleteModalOpen(true);
+  };
+
+  // Open Access Period Modal
+  const openPeriodModal = (user: UserData) => {
+    setSelectedUser(user);
+    const today = new Date().toISOString().split('T')[0];
+    const fromStr = user.validFrom ? new Date(user.validFrom).toISOString().split('T')[0] : today;
+    const toStr = user.validTo ? new Date(user.validTo).toISOString().split('T')[0] : new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+    setPeriodData({
+      validFrom: fromStr,
+      validTo: toStr,
+      enabled: user.enabled,
+    });
+    setIsPeriodModalOpen(true);
+  };
+
+  // Save Custom Access Period Directly to Physical Terminal & DB
+  const handleSaveAccessPeriod = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedUser) return;
+    try {
+      setActionLoading(true);
+      setError(null);
+      await usersApi.setAccessPeriod(selectedUser.employeeNo, {
+        validFrom: periodData.validFrom,
+        validTo: periodData.validTo,
+        enabled: periodData.enabled,
+      });
+      setSuccessMsg(`Access validity period for '${selectedUser.name}' (ID: ${selectedUser.employeeNo}) configured and synced directly to terminal.`);
+      setIsPeriodModalOpen(false);
+      await fetchUsers();
+    } catch (err: any) {
+      setError(err.message || 'Failed to update access period on physical terminal');
+    } finally {
+      setActionLoading(false);
+    }
   };
 
   // Create User Handler
@@ -441,12 +495,30 @@ export const UsersPage: React.FC = () => {
                       Group {u.groupId ?? 1}
                     </td>
                     <td style={{ textAlign: 'right' }}>
-                      <div style={{ display: 'inline-flex', gap: '6px' }}>
+                      <div style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
+                        <button
+                          className="btn btn-secondary"
+                          style={{ padding: '4px 8px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}
+                          onClick={() => onNavigateToAttendance?.(u.employeeNo)}
+                          title="View Attendance History for this Employee"
+                        >
+                          <Clock size={12} />
+                          <span>Attendance</span>
+                        </button>
+                        <button
+                          className="btn btn-outline"
+                          style={{ padding: '4px 8px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}
+                          onClick={() => openPeriodModal(u)}
+                          title="Configure Access Period & Terminal Expiry"
+                        >
+                          <Calendar size={12} />
+                          <span>Access</span>
+                        </button>
                         <button
                           className="btn btn-secondary"
                           style={{ padding: '5px 8px' }}
                           onClick={() => openEditModal(u)}
-                          title="Edit Employee"
+                          title="Edit Employee Details"
                         >
                           <Edit2 size={13} />
                         </button>
@@ -802,6 +874,120 @@ export const UsersPage: React.FC = () => {
             </p>
           </div>
         </div>
+      </Modal>
+
+      {/* ACCESS PERIOD CONFIGURATION MODAL (SYNCED TO PHYSICAL TERMINAL) */}
+      <Modal
+        isOpen={isPeriodModalOpen}
+        title={`Set Terminal Access Period — ${selectedUser?.name} (#${selectedUser?.employeeNo})`}
+        onClose={() => setIsPeriodModalOpen(false)}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+            <button className="btn btn-outline" onClick={() => setIsPeriodModalOpen(false)}>Cancel</button>
+            <button
+              className="btn btn-primary"
+              onClick={handleSaveAccessPeriod}
+              disabled={actionLoading}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+            >
+              <Key size={14} />
+              <span>{actionLoading ? 'Pushing to Terminal...' : 'Sync & Save to Terminal'}</span>
+            </button>
+          </div>
+        }
+      >
+        <form onSubmit={handleSaveAccessPeriod} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div style={{ padding: '10px 14px', background: 'rgba(56, 189, 248, 0.08)', borderRadius: '8px', border: '1px solid rgba(56, 189, 248, 0.2)' }}>
+            <p style={{ fontSize: '13px', color: 'var(--text-primary)', margin: 0, fontWeight: 500 }}>
+              Physical Hardware Sync Guaranteed
+            </p>
+            <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '4px 0 0 0' }}>
+              Changes will be pushed directly to the terminal's memory via ISAPI. Setting an expired date or unchecking active access ensures the turnstile/door will block this employee on the physical reader.
+            </p>
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+            <div>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
+                Valid From
+              </label>
+              <input
+                type="date"
+                required
+                className="input-field"
+                value={periodData.validFrom}
+                onChange={(e) => setPeriodData({ ...periodData, validFrom: e.target.value })}
+                style={{ width: '100%' }}
+              />
+            </div>
+            <div>
+              <label style={{ display: 'block', marginBottom: '6px', fontSize: '13px', fontWeight: 500 }}>
+                Valid Until (Terminal Expiry)
+              </label>
+              <input
+                type="date"
+                required
+                className="input-field"
+                value={periodData.validTo}
+                onChange={(e) => setPeriodData({ ...periodData, validTo: e.target.value })}
+                style={{ width: '100%' }}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label style={{ display: 'block', marginBottom: '6px', fontSize: '12.5px', fontWeight: 500, color: 'var(--text-secondary)' }}>
+              Quick Presets:
+            </label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+              {[
+                { label: '+1 Month', days: 30 },
+                { label: '+3 Months', days: 90 },
+                { label: '+6 Months', days: 182 },
+                { label: '+1 Year', days: 365 },
+                { label: '+3 Years', days: 1095 },
+              ].map((preset) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  className="btn btn-outline"
+                  style={{ fontSize: '11.5px', padding: '4px 8px' }}
+                  onClick={() => {
+                    const now = new Date();
+                    const fromStr = now.toISOString().split('T')[0];
+                    const future = new Date(now.getTime() + preset.days * 24 * 60 * 60 * 1000);
+                    const toStr = future.toISOString().split('T')[0];
+                    setPeriodData({ validFrom: fromStr, validTo: toStr, enabled: true });
+                  }}
+                >
+                  {preset.label}
+                </button>
+              ))}
+              <button
+                type="button"
+                className="btn btn-outline"
+                style={{ fontSize: '11.5px', padding: '4px 8px', color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.3)' }}
+                onClick={() => {
+                  const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                  setPeriodData({ ...periodData, validTo: yesterday, enabled: false });
+                }}
+              >
+                🚫 Block / Expire Now
+              </button>
+            </div>
+          </div>
+
+          <div style={{ borderTop: '1px solid var(--border-color)', paddingTop: '12px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '13px', fontWeight: 500 }}>
+              <input
+                type="checkbox"
+                checked={periodData.enabled}
+                onChange={(e) => setPeriodData({ ...periodData, enabled: e.target.checked })}
+              />
+              <span>Terminal Access Enabled (Allow Face / Card / PIN Unlock)</span>
+            </label>
+          </div>
+        </form>
       </Modal>
     </div>
   );

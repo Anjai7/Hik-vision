@@ -1,0 +1,372 @@
+{
+  "info": {
+    "title": "Hikvision DS-K1T320MFWX ISAPI Endpoints Reference",
+    "version": "V3.5.2 build 240701",
+    "description": "Full HTTP/ISAPI endpoint mapping for Hikvision Face and Access Control Terminal at 192.168.18.229",
+    "baseUrl": "http://192.168.18.229",
+    "auth": "Digest Auth (RFC 2617)"
+  },
+  "endpoints": [
+    {
+      "category": "System Information",
+      "method": "GET",
+      "path": "/ISAPI/System/deviceInfo",
+      "query": "format=json",
+      "description": "Get hardware model, serial number, firmware version, macAddress, and lock counts",
+      "sampleResponse": {
+        "DeviceInfo": {
+          "deviceName": "Access Controller",
+          "deviceID": "255",
+          "model": "DS-K1T320MFWX",
+          "serialNumber": "DS-K1T320MFWX20240701V030502ENFK5347382",
+          "macAddress": "04:03:12:3a:bf:59",
+          "firmwareVersion": "V3.5.2",
+          "firmwareReleasedDate": "build 240701",
+          "deviceType": "ACS",
+          "subDeviceType": "accessControlTerminal",
+          "electroLockNum": 1
+        }
+      }
+    },
+    {
+      "category": "System Information",
+      "method": "GET",
+      "path": "/ISAPI/System/status",
+      "description": "Check device CPU, memory, and runtime status"
+    },
+    {
+      "category": "System Time",
+      "method": "GET",
+      "path": "/ISAPI/System/time",
+      "query": "format=json",
+      "description": "Read terminal local time and timezone"
+    },
+    {
+      "category": "System Time",
+      "method": "PUT",
+      "path": "/ISAPI/System/time",
+      "description": "Set terminal clock time and timezone",
+      "sampleRequest": {
+        "timeMode": "manual",
+        "localTime": "2026-09-22T17:30:00",
+        "timeZone": "CST-8:00:00"
+      }
+    },
+    {
+      "category": "System Maintenance",
+      "method": "PUT",
+      "path": "/ISAPI/System/reboot",
+      "description": "Soft reboot the physical terminal"
+    },
+    {
+      "category": "Network Settings",
+      "method": "GET",
+      "path": "/ISAPI/System/Network/interfaces",
+      "description": "Get physical wired Ethernet network configurations (IP, Subnet, Gateway, DNS)"
+    },
+    {
+      "category": "Network Settings",
+      "method": "GET",
+      "path": "/ISAPI/System/Network/wifi",
+      "description": "Get wireless Wi-Fi station status and parameters"
+    },
+    {
+      "category": "Access Control Work Status",
+      "method": "GET",
+      "path": "/ISAPI/AccessControl/AcsWorkStatus",
+      "query": "format=json",
+      "description": "Live status of door lock (0=locked, 1=unlocked), door sensor (4=closed), tamper switch, and Wi-Fi",
+      "sampleResponse": {
+        "AcsWorkStatus": {
+          "doorLockStatus": [0],
+          "doorStatus": [4],
+          "magneticStatus": [0],
+          "hostAntiDismantleStatus": "open",
+          "cardReaderOnlineStatus": [1],
+          "cardReaderVerifyMode": [10],
+          "wifiStatus": "connect"
+        }
+      }
+    },
+    {
+      "category": "Remote Door Control",
+      "method": "PUT",
+      "path": "/ISAPI/AccessControl/RemoteControl/door/1",
+      "description": "Trigger remote door lock actions (open, close, alwaysOpen, alwaysClose)",
+      "format": "XML",
+      "sampleRequest": "<RemoteControlDoor version=\"2.0\" xmlns=\"http://www.isapi.org/ver20/XMLSchema\"><cmd>open</cmd></RemoteControlDoor>"
+    },
+    {
+      "category": "User Management",
+      "method": "GET",
+      "path": "/ISAPI/AccessControl/UserInfo/Count",
+      "query": "format=json",
+      "description": "Get total count of registered persons and credential bindings (faces, cards, fingerprints)",
+      "sampleResponse": {
+        "UserInfoCount": {
+          "userNumber": 24,
+          "bindFingerprintUserNumber": 0,
+          "bindFaceUserNumber": 12,
+          "bindCardUserNumber": 10
+        }
+      }
+    },
+    {
+      "category": "User Management",
+      "method": "POST",
+      "path": "/ISAPI/AccessControl/UserInfo/Search",
+      "query": "format=json",
+      "description": "Paginated search of users/employees with optional filter by employeeNo",
+      "sampleRequest": {
+        "UserInfoSearchCond": {
+          "searchID": "1",
+          "searchResultPosition": 0,
+          "maxResults": 30
+        }
+      },
+      "sampleResponse": {
+        "UserInfoSearch": {
+          "searchID": "1",
+          "totalMatches": 1,
+          "numOfMatches": 1,
+          "UserInfo": [
+            {
+              "employeeNo": "1001",
+              "name": "Jane Smith",
+              "userType": "normal",
+              "closeDelayEnabled": false,
+              "Valid": {
+                "enable": true,
+                "beginTime": "2024-01-01T00:00:00",
+                "endTime": "2035-12-31T23:59:59",
+                "timeType": "local"
+              },
+              "doorRight": "1",
+              "RightPlan": [
+                {
+                  "doorNo": 1,
+                  "planTemplateNo": "1"
+                }
+              ]
+            }
+          ]
+        }
+      }
+    },
+    {
+      "category": "User Management",
+      "method": "PUT",
+      "path": "/ISAPI/AccessControl/UserInfo/SetUp",
+      "query": "format=json",
+      "description": "Upsert (create or overwrite) user on terminal with access validity and door permissions",
+      "sampleRequest": {
+        "UserInfo": {
+          "employeeNo": "1002",
+          "name": "Alex Miller",
+          "userType": "normal",
+          "Valid": {
+            "enable": true,
+            "beginTime": "2026-01-01T00:00:00",
+            "endTime": "2030-12-31T23:59:59",
+            "timeType": "local"
+          },
+          "doorRight": "1"
+        }
+      }
+    },
+    {
+      "category": "User Management",
+      "method": "PUT",
+      "path": "/ISAPI/AccessControl/UserInfo/Modify",
+      "query": "format=json",
+      "description": "Update specific fields of an existing user (name, valid date window, enable/disable)"
+    },
+    {
+      "category": "User Management",
+      "method": "PUT",
+      "path": "/ISAPI/AccessControl/UserInfo/Delete",
+      "query": "format=json",
+      "description": "Delete user and all their biometric credentials by employee number",
+      "sampleRequest": {
+        "UserInfoDelCond": {
+          "EmployeeNoList": [
+            {
+              "employeeNo": "1002"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "category": "Card Management",
+      "method": "GET",
+      "path": "/ISAPI/AccessControl/CardInfo/Count",
+      "query": "format=json",
+      "description": "Count total RFID/Mifare cards assigned in terminal memory"
+    },
+    {
+      "category": "Card Management",
+      "method": "POST",
+      "path": "/ISAPI/AccessControl/CardInfo/Search",
+      "query": "format=json",
+      "description": "Search cards registered on terminal by employeeNo or cardNumber",
+      "sampleRequest": {
+        "CardInfoSearchCond": {
+          "searchID": "1",
+          "searchResultPosition": 0,
+          "maxResults": 30
+        }
+      }
+    },
+    {
+      "category": "Card Management",
+      "method": "PUT",
+      "path": "/ISAPI/AccessControl/CardInfo/SetUp",
+      "query": "format=json",
+      "description": "Bind physical RFID/NFC card to an employee",
+      "sampleRequest": {
+        "CardInfo": {
+          "cardNumber": "0012345678",
+          "employeeNo": "1001",
+          "cardType": "normalCard"
+        }
+      }
+    },
+    {
+      "category": "Card Management",
+      "method": "PUT",
+      "path": "/ISAPI/AccessControl/CardInfo/Delete",
+      "query": "format=json",
+      "description": "Unbind or delete card from terminal",
+      "sampleRequest": {
+        "CardInfoDelCond": {
+          "CardNoList": [
+            {
+              "cardNumber": "0012345678"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "category": "Face Biometrics",
+      "method": "GET",
+      "path": "/ISAPI/Intelligent/FDLib",
+      "query": "format=json",
+      "description": "Get face libraries on device (blackFD: standard face library, infraredFD: anti-spoof lib)",
+      "sampleResponse": {
+        "FDLib": [
+          {
+            "FDID": "1",
+            "faceLibType": "blackFD",
+            "name": ""
+          },
+          {
+            "FDID": "2",
+            "faceLibType": "infraredFD",
+            "name": ""
+          }
+        ]
+      }
+    },
+    {
+      "category": "Face Biometrics",
+      "method": "POST",
+      "path": "/ISAPI/Intelligent/FDLib/FDSearch",
+      "query": "format=json",
+      "description": "Search enrolled facial recognition records and image tokens by employee",
+      "sampleRequest": {
+        "FDSearchCond": {
+          "searchID": "1",
+          "searchResultPosition": 0,
+          "maxResults": 10,
+          "faceLibType": "blackFD",
+          "FDID": "1"
+        }
+      }
+    },
+    {
+      "category": "Face Biometrics",
+      "method": "POST",
+      "path": "/ISAPI/AccessControl/CaptureFaceData",
+      "description": "Interactive trigger: commands terminal camera to capture a live face photo of person standing in front"
+    },
+    {
+      "category": "Access & Attendance Events",
+      "method": "POST",
+      "path": "/ISAPI/AccessControl/AcsEvent",
+      "query": "format=json",
+      "description": "Query historical access logs, attendance punch times, card/face scans, and door alarms",
+      "sampleRequest": {
+        "AcsEventCond": {
+          "searchID": "1",
+          "searchResultPosition": 0,
+          "maxResults": 30,
+          "major": 0,
+          "minor": 0,
+          "startTime": "2026-09-01T00:00:00",
+          "endTime": "2026-09-22T23:59:59"
+        }
+      },
+      "sampleResponse": {
+        "AcsEvent": {
+          "searchID": "1",
+          "totalMatches": 66,
+          "numOfMatches": 2,
+          "InfoList": [
+            {
+              "major": 5,
+              "minor": 38,
+              "time": "2026-09-22T14:32:10+08:00",
+              "cardNo": "0012345678",
+              "cardType": 1,
+              "name": "Jane Smith",
+              "employeeNo": "1001",
+              "currentVerifyMode": "faceOrFpOrCardOrPw",
+              "attendanceStatus": "checkIn"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "category": "Real-Time Webhook Push",
+      "method": "GET",
+      "path": "/ISAPI/Event/notification/httpHosts",
+      "description": "Get configured webhook listener hosts (servers that terminal sends real-time swipes to)"
+    },
+    {
+      "category": "Real-Time Webhook Push",
+      "method": "PUT",
+      "path": "/ISAPI/Event/notification/httpHosts",
+      "format": "XML",
+      "description": "Register custom application backend URL/IP to receive instant POST events when someone swipes face/card",
+      "sampleRequest": "<HttpHostNotificationList version=\"2.0\" xmlns=\"http://www.isapi.org/ver20/XMLSchema\"><HttpHostNotification><id>1</id><url>/api/events/webhook</url><protocolType>HTTP</protocolType><parameterFormatType>json</parameterFormatType><addressingFormatType>ipaddress</addressingFormatType><ipAddress>192.168.18.50</ipAddress><portNo>4000</portNo><httpAuthenticationMode>none</httpAuthenticationMode></HttpHostNotification></HttpHostNotificationList>"
+    },
+    {
+      "category": "Real-Time Stream",
+      "method": "GET",
+      "path": "/ISAPI/Event/notification/alertStream",
+      "description": "Long-lived HTTP persistent stream pushing real-time swipe/door events as chunked multipart messages"
+    },
+    {
+      "category": "Live Video Streaming",
+      "method": "GET",
+      "path": "/ISAPI/Streaming/channels",
+      "description": "Get video streaming channels and camera configuration"
+    },
+    {
+      "category": "Live Video Streaming (RTSP)",
+      "method": "RTSP",
+      "path": "/Streaming/Channels/101",
+      "port": 554,
+      "description": "Main H.264 video stream from device camera for live view in custom app"
+    },
+    {
+      "category": "Device Security",
+      "method": "GET",
+      "path": "/ISAPI/Security/users",
+      "description": "List admin and operator user accounts registered on terminal hardware"
+    }
+  ]
+}

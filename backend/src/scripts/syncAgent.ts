@@ -55,8 +55,10 @@ export async function runSyncCycle(): Promise<{ processed: number; errors: numbe
 
   for (const user of pendingUsers) {
     try {
-      const beginTime = formatHikvisionDateTime(user.validFrom, '2020-01-01T00:00:00');
       const isExpired = user.enabled === false || (user.validTo && new Date(user.validTo) < new Date());
+      const beginTime = isExpired
+        ? '2020-01-01T00:00:00'
+        : formatHikvisionDateTime(user.validFrom, '2020-01-01T00:00:00');
       const endTime = isExpired
         ? '2020-01-02T00:00:00' // Expired date in the past -> terminal locks door!
         : formatHikvisionDateTime(user.validTo, '2035-12-31T23:59:59');

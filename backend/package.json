@@ -17,7 +17,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:webhook": "tsx src/scripts/test_webhook_push.ts",
-    "sync-agent": "ts-node src/scripts/syncAgent.ts"
+    "sync-agent": "tsx src/scripts/syncAgent.ts"
   },
   "keywords": [
     "hikvision",

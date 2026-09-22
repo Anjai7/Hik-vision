@@ -1,7 +1,7 @@
 import { prisma } from '../db';
 import { deviceService } from './DeviceService';
 import { HikvisionError, HikvisionClient } from '../hikvision';
-import { HikvisionUsers } from '../hikvision/HikvisionUsers';
+import { HikvisionUsers, formatHikvisionDateTime } from '../hikvision/HikvisionUsers';
 import { config } from '../config';
 import { logger } from '../utils/logger';
 
@@ -141,8 +141,8 @@ export class UserService {
         timeoutMs: config.HIKVISION_TIMEOUT,
       });
       const hikUsers = new HikvisionUsers(client);
-      const beginTime = newUser.validFrom ? newUser.validFrom.toISOString().replace('Z', '') : '2020-01-01T00:00:00';
-      const endTime = newUser.validTo ? newUser.validTo.toISOString().replace('Z', '') : '2035-12-31T23:59:59';
+      const beginTime = formatHikvisionDateTime(newUser.validFrom, '2020-01-01T00:00:00');
+      const endTime = formatHikvisionDateTime(newUser.validTo, '2035-12-31T23:59:59');
       await hikUsers.createTerminalUser({
         employeeNo: newUser.employeeNo,
         name: newUser.name,
@@ -208,6 +208,7 @@ export class UserService {
     });
 
     // Attempt direct update on physical Hikvision terminal
+    let terminalSyncError: string | null = null;
     try {
       const client = new HikvisionClient({
         host: config.HIKVISION_HOST,
@@ -218,10 +219,12 @@ export class UserService {
       });
       const hikUsers = new HikvisionUsers(client);
       const isExpired = updated.enabled === false || (updated.validTo && new Date(updated.validTo) < new Date());
-      const beginTime = updated.validFrom ? updated.validFrom.toISOString().replace('Z', '') : '2020-01-01T00:00:00';
+      const beginTime = isExpired
+        ? '2020-01-01T00:00:00'
+        : formatHikvisionDateTime(updated.validFrom, '2020-01-01T00:00:00');
       const endTime = isExpired
         ? '2020-01-02T00:00:00'
-        : (updated.validTo ? updated.validTo.toISOString().replace('Z', '') : '2035-12-31T23:59:59');
+        : formatHikvisionDateTime(updated.validTo, '2035-12-31T23:59:59');
 
       await hikUsers.updateUserValidity(updated.employeeNo, {
         beginTime,
@@ -240,10 +243,17 @@ export class UserService {
       });
       logger.info(`[UserService] Updated user ${updated.employeeNo} (${updated.name}) on physical terminal.`);
     } catch (pushErr: any) {
-      logger.warn(`[UserService] Terminal direct update failed: ${pushErr.message}. Marked PENDING for sync agent.`);
+      terminalSyncError = pushErr.message || 'Terminal connection failed';
+      logger.warn(`[UserService] Terminal direct update failed: ${terminalSyncError}. Marked PENDING for sync agent.`);
     }
 
-    return updated;
+    return {
+      ...updated,
+      terminalSync: {
+        success: !terminalSyncError,
+        error: terminalSyncError,
+      },
+    };
   }
 
   public async deleteUser(employeeNo: string) {
@@ -279,6 +289,21 @@ export class UserService {
     });
 
     return { success: true, deletedEmployeeNo: employeeNo };
+  }
+
+  public async setAccessPeriod(
+    employeeNo: string,
+    data: {
+      validFrom: string | Date;
+      validTo: string | Date;
+      enabled?: boolean;
+    }
+  ) {
+    return this.updateUser(employeeNo, {
+      validFrom: data.validFrom,
+      validTo: data.validTo,
+      enabled: data.enabled !== undefined ? data.enabled : true,
+    });
   }
 
   public async toggleUserStatus(employeeNo: string, enabled: boolean) {

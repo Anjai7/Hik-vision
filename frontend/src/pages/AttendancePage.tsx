@@ -26,9 +26,23 @@ import { Modal } from '../components/ui/Modal';
 import { JsonViewer } from '../components/ui/JsonViewer';
 import { Pagination } from '../components/ui/Pagination';
 
-export const AttendancePage: React.FC = () => {
+export interface AttendancePageProps {
+  initialEmployeeNo?: string;
+}
+
+export const AttendancePage: React.FC<AttendancePageProps> = ({ initialEmployeeNo }) => {
   // View mode: 'timesheet' (Daily summary) | 'punches' (Access log) | 'by-user' (Per-user breakdown)
-  const [viewMode, setViewMode] = useState<'timesheet' | 'punches' | 'by-user'>('timesheet');
+  const [viewMode, setViewMode] = useState<'timesheet' | 'punches' | 'by-user'>(
+    initialEmployeeNo ? 'by-user' : 'timesheet'
+  );
+
+  // If initialEmployeeNo was provided, initialize selectedEmployeeNo
+  useEffect(() => {
+    if (initialEmployeeNo) {
+      setSelectedEmployeeNo(initialEmployeeNo);
+      setViewMode('by-user');
+    }
+  }, [initialEmployeeNo]);
 
   // Timesheet data
   const [dailySummary, setDailySummary] = useState<DailySummaryRecord[]>([]);

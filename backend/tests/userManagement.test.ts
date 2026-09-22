@@ -102,4 +102,34 @@ describe('User Management API Endpoints', () => {
     expect(res.body.success).toBe(true);
     expect(res.body.data.deletedEmployeeNo).toBe('201');
   });
+
+  it('POST /api/users/:employeeNo/access-period updates validity and syncs to terminal', async () => {
+    (prisma.user.findFirst as any).mockResolvedValue({
+      id: 'usr-1',
+      employeeNo: '201',
+      name: 'John Doe',
+      enabled: true,
+    });
+    (prisma.user.update as any).mockResolvedValue({
+      id: 'usr-1',
+      employeeNo: '201',
+      name: 'John Doe',
+      validFrom: new Date('2026-09-22T00:00:00Z'),
+      validTo: new Date('2027-09-22T23:59:59Z'),
+      enabled: true,
+      device: { name: 'Hikvision DS-K1T320MFWX' },
+    });
+
+    const res = await request(app)
+      .post('/api/users/201/access-period')
+      .send({
+        validFrom: '2026-09-22',
+        validTo: '2027-09-22',
+        enabled: true,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.success).toBe(true);
+    expect(res.body.message).toContain('Access period configured');
+  });
 });

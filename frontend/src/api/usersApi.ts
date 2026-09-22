@@ -76,6 +76,14 @@ export const usersApi = {
     return res.data.data;
   },
 
+  setAccessPeriod: async (
+    employeeNo: string,
+    payload: { validFrom: string; validTo: string; enabled?: boolean }
+  ): Promise<UserData> => {
+    const res = await apiClient.post<ApiResponse<UserData>>(`/users/${employeeNo}/access-period`, payload);
+    return res.data.data;
+  },
+
   syncUsers: async (): Promise<{ count: number; durationMs: number }> => {
     const res = await apiClient.post<ApiResponse<{ count: number; durationMs: number }>>('/users/sync');
     return res.data.data;

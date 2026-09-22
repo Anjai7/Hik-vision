@@ -14,6 +14,7 @@ export const App: React.FC = () => {
   const [lastSyncAt, setLastSyncAt] = useState<string | null>(null);
   const [deviceModel, setDeviceModel] = useState<string>('DS-K1T320MFWX');
   const [firmware, setFirmware] = useState<string>('V3.5.2');
+  const [attendanceEmployeeNo, setAttendanceEmployeeNo] = useState<string | undefined>();
 
   const checkStatus = async () => {
     try {
@@ -85,9 +86,18 @@ export const App: React.FC = () => {
             />
           )}
 
-          {activeTab === 'users' && <UsersPage />}
+          {activeTab === 'users' && (
+            <UsersPage
+              onNavigateToAttendance={(empNo) => {
+                setAttendanceEmployeeNo(empNo);
+                setActiveTab('attendance');
+              }}
+            />
+          )}
 
-          {activeTab === 'attendance' && <AttendancePage />}
+          {activeTab === 'attendance' && (
+            <AttendancePage initialEmployeeNo={attendanceEmployeeNo} />
+          )}
 
           {activeTab === 'device' && <DevicePage />}
         </main>
