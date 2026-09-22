@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+model Device {
+  id          String            @id @default(uuid())
+  name        String
+  host        String
+  username    String
+  model       String?
+  firmware    String?
+  serialNo    String?
+  enabled     Boolean           @default(true)
+  lastSeenAt  DateTime?
+  lastSyncAt  DateTime?
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  users       User[]
+  events      AttendanceEvent[]
+  syncStates  SyncState[]
+
+  @@map("devices")
+}
+
+model User {
+  id          String   @id @default(uuid())
+  employeeNo  String
+  name        String
+  userType    String   @default("normal")
+  enabled     Boolean  @default(true)
+  gender      String?
+  groupId     Int?
+  numOfFP     Int      @default(0)
+  numOfFace   Int      @default(0)
+  numOfCard   Int      @default(0)
+  deviceId    String
+  device      Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([deviceId, employeeNo])
+  @@index([employeeNo])
+  @@map("users")
+}
+
+model AttendanceEvent {
+  id               String   @id @default(uuid())
+  deviceId         String
+  device           Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  employeeNo       String?
+  employeeName     String?
+  eventTime        DateTime
+  major            Int
+  minor            Int
+  verificationMode String?
+  doorNo           Int?
+  cardReaderNo     Int?
+  serialNo         Int?
+  rawEvent         Json
+  createdAt        DateTime @default(now())
+
+  // Prevents duplicate Hikvision events across devices and searches
+  @@unique([deviceId, serialNo, eventTime, employeeNo])
+  @@index([eventTime])
+  @@index([employeeNo])
+  @@index([major, minor])
+  @@map("attendance_events")
+}
+
+model SyncState {
+  id                 String    @id @default(uuid())
+  deviceId           String
+  device             Device    @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  syncType           String    // 'USERS' | 'EVENTS' | 'FULL'
+  status             String    // 'IN_PROGRESS' | 'SUCCESS' | 'FAILED'
+  itemsProcessed     Int       @default(0)
+  lastSyncedPosition Int?      @default(0)
+  errorMessage       String?
+  startedAt          DateTime  @default(now())
+  completedAt        DateTime?
+
+  @@index([deviceId, syncType])
+  @@map("sync_states")
+}
