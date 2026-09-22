@@ -1,6 +1,9 @@
 import { prisma } from '../db';
 import { deviceService } from './DeviceService';
-import { HikvisionError } from '../hikvision';
+import { HikvisionError, HikvisionClient } from '../hikvision';
+import { HikvisionUsers } from '../hikvision/HikvisionUsers';
+import { config } from '../config';
+import { logger } from '../utils/logger';
 
 export interface GetUsersQuery {
   page?: number;
@@ -128,6 +131,37 @@ export class UserService {
       },
     });
 
+    // Attempt direct provision on physical Hikvision terminal
+    try {
+      const client = new HikvisionClient({
+        host: config.HIKVISION_HOST,
+        username: config.HIKVISION_USERNAME,
+        password: config.HIKVISION_PASSWORD,
+        verifyTls: config.HIKVISION_VERIFY_TLS,
+        timeoutMs: config.HIKVISION_TIMEOUT,
+      });
+      const hikUsers = new HikvisionUsers(client);
+      const beginTime = newUser.validFrom ? newUser.validFrom.toISOString().replace('Z', '') : '2020-01-01T00:00:00';
+      const endTime = newUser.validTo ? newUser.validTo.toISOString().replace('Z', '') : '2035-12-31T23:59:59';
+      await hikUsers.createTerminalUser({
+        employeeNo: newUser.employeeNo,
+        name: newUser.name,
+        userType: newUser.userType,
+        validFrom: beginTime,
+        validTo: endTime,
+      });
+      await prisma.user.update({
+        where: { id: newUser.id },
+        data: {
+          terminalSyncStatus: 'SYNCED',
+          lastTerminalSyncAt: new Date(),
+        },
+      });
+      logger.info(`[UserService] Created user ${newUser.employeeNo} (${newUser.name}) directly on physical terminal.`);
+    } catch (pushErr: any) {
+      logger.warn(`[UserService] Terminal direct provision failed: ${pushErr.message}. User saved as PENDING for background sync agent.`);
+    }
+
     return newUser;
   }
 
@@ -173,6 +207,42 @@ export class UserService {
       },
     });
 
+    // Attempt direct update on physical Hikvision terminal
+    try {
+      const client = new HikvisionClient({
+        host: config.HIKVISION_HOST,
+        username: config.HIKVISION_USERNAME,
+        password: config.HIKVISION_PASSWORD,
+        verifyTls: config.HIKVISION_VERIFY_TLS,
+        timeoutMs: config.HIKVISION_TIMEOUT,
+      });
+      const hikUsers = new HikvisionUsers(client);
+      const isExpired = updated.enabled === false || (updated.validTo && new Date(updated.validTo) < new Date());
+      const beginTime = updated.validFrom ? updated.validFrom.toISOString().replace('Z', '') : '2020-01-01T00:00:00';
+      const endTime = isExpired
+        ? '2020-01-02T00:00:00'
+        : (updated.validTo ? updated.validTo.toISOString().replace('Z', '') : '2035-12-31T23:59:59');
+
+      await hikUsers.updateUserValidity(updated.employeeNo, {
+        beginTime,
+        endTime,
+        enable: updated.enabled,
+        name: updated.name,
+        userType: updated.userType,
+      });
+
+      await prisma.user.update({
+        where: { id: updated.id },
+        data: {
+          terminalSyncStatus: 'SYNCED',
+          lastTerminalSyncAt: new Date(),
+        },
+      });
+      logger.info(`[UserService] Updated user ${updated.employeeNo} (${updated.name}) on physical terminal.`);
+    } catch (pushErr: any) {
+      logger.warn(`[UserService] Terminal direct update failed: ${pushErr.message}. Marked PENDING for sync agent.`);
+    }
+
     return updated;
   }
 
@@ -186,6 +256,22 @@ export class UserService {
       err.statusCode = 404;
       err.code = 'USER_NOT_FOUND';
       throw err;
+    }
+
+    // Attempt direct delete from physical Hikvision terminal
+    try {
+      const client = new HikvisionClient({
+        host: config.HIKVISION_HOST,
+        username: config.HIKVISION_USERNAME,
+        password: config.HIKVISION_PASSWORD,
+        verifyTls: config.HIKVISION_VERIFY_TLS,
+        timeoutMs: config.HIKVISION_TIMEOUT,
+      });
+      const hikUsers = new HikvisionUsers(client);
+      await hikUsers.deleteTerminalUser(employeeNo);
+      logger.info(`[UserService] Deleted user ${employeeNo} directly from physical terminal.`);
+    } catch (delErr: any) {
+      logger.warn(`[UserService] Could not delete user from terminal: ${delErr.message}`);
     }
 
     await prisma.user.delete({

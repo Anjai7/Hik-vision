@@ -115,16 +115,55 @@ export class HikvisionUsers {
   }
 
   /**
-   * UNVERIFIED: Create user on terminal
-   * Note: Writing user biometrics or records directly requires model-verified endpoints.
-   * Marked unverified as per specification.
+   * Create user directly on the physical Hikvision terminal
    */
-  public async createTerminalUser(user: { employeeNo: string; name: string; userType?: string }): Promise<never> {
-    throw new HikvisionError(
-      'Terminal user creation is unverified for DS-K1T320MFWX firmware V3.5.2. Biometric and user record provisioning must be verified on hardware before activation.',
-      'UNVERIFIED_ENDPOINT',
-      501
-    );
+  public async createTerminalUser(user: {
+    employeeNo: string;
+    name: string;
+    userType?: string;
+    validFrom?: string;
+    validTo?: string;
+    belongGroup?: number;
+    doorRight?: string;
+  }): Promise<any> {
+    const beginTime = user.validFrom || '2020-01-01T00:00:00';
+    const endTime = user.validTo || '2035-12-31T23:59:59';
+    const payload = {
+      UserInfo: {
+        employeeNo: user.employeeNo,
+        name: user.name,
+        userType: user.userType || 'normal',
+        closeDelayEnabled: false,
+        Valid: {
+          enable: true,
+          beginTime,
+          endTime,
+          timeType: 'local',
+        },
+        belongGroup: user.belongGroup || 1,
+        doorRight: user.doorRight || '1',
+        RightPlan: [
+          {
+            doorNo: 1,
+            planTemplateNo: '1',
+          },
+        ],
+      },
+    };
+
+    return this.client.post<any>('/ISAPI/AccessControl/UserInfo/Record?format=json', payload);
+  }
+
+  /**
+   * Delete user directly from the physical Hikvision terminal
+   */
+  public async deleteTerminalUser(employeeNo: string): Promise<any> {
+    const payload = {
+      UserInfoDelCond: {
+        EmployeeNoList: [{ employeeNo }],
+      },
+    };
+    return this.client.put<any>('/ISAPI/AccessControl/UserInfo/Delete?format=json', payload);
   }
 
   /**

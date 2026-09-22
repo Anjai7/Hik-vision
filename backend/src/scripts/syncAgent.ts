@@ -12,6 +12,7 @@
 import { prisma } from '../db';
 import { HikvisionClient } from '../hikvision';
 import { HikvisionUsers } from '../hikvision/HikvisionUsers';
+import { syncService } from '../services/SyncService';
 import { config } from '../config';
 
 function createClient(): HikvisionClient {
@@ -55,24 +56,35 @@ export async function runSyncCycle(): Promise<{ processed: number; errors: numbe
   for (const user of pendingUsers) {
     try {
       const beginTime = formatHikvisionDateTime(user.validFrom, '2020-01-01T00:00:00');
-      // If user.enabled is false, force an expired endTime so terminal hardware immediately rejects scans
       const isExpired = user.enabled === false || (user.validTo && new Date(user.validTo) < new Date());
       const endTime = isExpired
         ? '2020-01-02T00:00:00' // Expired date in the past -> terminal locks door!
         : formatHikvisionDateTime(user.validTo, '2035-12-31T23:59:59');
 
-      console.log(`[SyncAgent] Updating terminal for ${user.name} (ID: ${user.employeeNo})...`);
-      console.log(`            Begin: ${beginTime} | End: ${endTime} | Enabled: ${user.enabled}`);
+      console.log(`[SyncAgent] Syncing ${user.name} (ID: ${user.employeeNo}) to terminal...`);
 
-      const result = await hikUsers.updateUserValidity(user.employeeNo, {
-        beginTime,
-        endTime,
-        enable: user.enabled,
-        name: user.name,
-        userType: user.userType,
-      });
-
-      console.log(`[SyncAgent] SUCCESS! Terminal accepted update for ID ${user.employeeNo}. Result:`, result);
+      try {
+        // Try modifying existing user first
+        await hikUsers.updateUserValidity(user.employeeNo, {
+          beginTime,
+          endTime,
+          enable: user.enabled,
+          name: user.name,
+          userType: user.userType,
+        });
+        console.log(`[SyncAgent] SUCCESS: Updated validity for ID ${user.employeeNo}.`);
+      } catch (modErr: any) {
+        // If user doesn't exist on terminal yet, create them!
+        console.log(`[SyncAgent] User ${user.employeeNo} not found on terminal, provisioning new user...`);
+        await hikUsers.createTerminalUser({
+          employeeNo: user.employeeNo,
+          name: user.name,
+          userType: user.userType,
+          validFrom: beginTime,
+          validTo: endTime,
+        });
+        console.log(`[SyncAgent] SUCCESS: Provisioned new user ID ${user.employeeNo} on physical terminal.`);
+      }
 
       await prisma.user.update({
         where: { id: user.id },
@@ -84,7 +96,7 @@ export async function runSyncCycle(): Promise<{ processed: number; errors: numbe
 
       processed++;
     } catch (err: any) {
-      console.error(`[SyncAgent] ERROR updating ID ${user.employeeNo} on terminal:`, err.message);
+      console.error(`[SyncAgent] ERROR syncing ID ${user.employeeNo} to terminal:`, err.message);
       errors++;
     }
   }
@@ -115,13 +127,28 @@ async function main() {
   }
 
   // Continuous polling loop
-  console.log('[SyncAgent] Listening for web portal changes...');
+  console.log('[SyncAgent] Listening for web portal changes and terminal scans...');
+  let loopCount = 0;
   const poll = async () => {
+    loopCount++;
     try {
       await runSyncCycle();
     } catch (e: any) {
-      console.error('[SyncAgent] Error during sync cycle:', e.message);
+      console.error('[SyncAgent] Error during user sync cycle:', e.message);
     }
+
+    // Pull events from terminal every 2 cycles (approx every 10s)
+    if (loopCount % 2 === 0) {
+      try {
+        const eventRes = await syncService.syncEvents();
+        if (eventRes.count > 0) {
+          console.log(`[SyncAgent] Synced ${eventRes.count} new attendance/access event(s) from terminal.`);
+        }
+      } catch (evErr: any) {
+        // terminal might be busy or offline
+      }
+    }
+
     setTimeout(poll, 5000);
   };
 
