@@ -29,6 +29,35 @@ vi.mock('../src/db', () => ({
   checkDatabaseConnection: vi.fn().mockResolvedValue(true),
 }));
 
+vi.mock('../src/hikvision/HikvisionClient', () => {
+  return {
+    HikvisionClient: vi.fn().mockImplementation(() => ({
+      get: vi.fn().mockResolvedValue({}),
+      post: vi.fn().mockResolvedValue({}),
+      put: vi.fn().mockResolvedValue({}),
+      delete: vi.fn().mockResolvedValue({}),
+      request: vi.fn().mockResolvedValue({}),
+    })),
+  };
+});
+
+vi.mock('../src/hikvision/HikvisionUsers', () => {
+  return {
+    formatHikvisionDateTime: vi.fn().mockReturnValue('2026-09-22T00:00:00'),
+    HikvisionUsers: vi.fn().mockImplementation(() => ({
+      createTerminalUser: vi.fn().mockResolvedValue({ status: 'OK' }),
+      updateUserValidity: vi.fn().mockResolvedValue({ status: 'OK' }),
+      deleteTerminalUser: vi.fn().mockResolvedValue({ status: 'OK' }),
+      getUserCount: vi.fn().mockResolvedValue({ userNumber: 3, bindFingerprintUserNumber: 2, bindFaceUserNumber: 1, bindCardUserNumber: 0 }),
+      searchUsers: vi.fn().mockResolvedValue({ users: [], totalMatches: 0 }),
+      fetchAllUsers: vi.fn().mockResolvedValue([]),
+      captureFingerprint: vi.fn().mockResolvedValue({ fingerData: 'mock', fingerPrintQuality: 90, fingerNo: 1 }),
+      setupFingerprint: vi.fn().mockResolvedValue({ status: 'OK' }),
+      getUserFingerprints: vi.fn().mockResolvedValue([]),
+    })),
+  };
+});
+
 describe('User Management API Endpoints', () => {
   beforeEach(() => {
     vi.clearAllMocks();
