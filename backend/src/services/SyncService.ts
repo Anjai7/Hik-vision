@@ -128,6 +128,22 @@ export class SyncService {
         processedCount++;
       }
 
+      // Remove users that have been deleted from the physical terminal
+      const terminalEmployeeNos = terminalUsers
+        .map((u) => u.employeeNo)
+        .filter((no): no is string => Boolean(no));
+
+      const pruned = await prisma.user.deleteMany({
+        where: {
+          deviceId: device.id,
+          employeeNo: { notIn: terminalEmployeeNos },
+        },
+      });
+
+      if (pruned.count > 0) {
+        logger.info(`[SyncService] Pruned ${pruned.count} user(s) no longer present on terminal.`);
+      }
+
       const durationMs = Date.now() - startTime;
 
       if (syncState) {
