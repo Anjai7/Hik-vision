@@ -27,6 +27,7 @@ vi.mock('../src/db', () => ({
 describe('Attendance Summary & Timesheet Endpoint', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    (prisma.user.findMany as any).mockResolvedValue([]);
   });
 
   it('GET /api/attendance/summary calculates firstIn, lastOut, and duration', async () => {

@@ -77,6 +77,21 @@ export class AttendanceSummaryService {
       orderBy: { eventTime: 'asc' },
     });
 
+    // Fetch user map for real-time name matching
+    const userMap = new Map<string, string>();
+    try {
+      const users = (await prisma.user.findMany({
+        select: { employeeNo: true, name: true },
+      })) || [];
+      if (Array.isArray(users)) {
+        for (const u of users) {
+          userMap.set(u.employeeNo, u.name);
+        }
+      }
+    } catch {
+      // ignore if user table empty or query fails
+    }
+
     // Group events by: `YYYY-MM-DD_employeeNo`
     const grouped = new Map<string, typeof events>();
 
@@ -124,7 +139,7 @@ export class AttendanceSummaryService {
       } else {
         // Multiple punches
         if (isToday) {
-          // If odd number of punches or last punch within 3 hours
+          // If last punch within 4 hours, still consider on premises
           const hoursSinceLastPunch = (Date.now() - lastTime.getTime()) / (1000 * 60 * 60);
           if (hoursSinceLastPunch < 4) {
             status = 'IN_OFFICE';
@@ -153,11 +168,12 @@ export class AttendanceSummaryService {
       }
 
       const descInfo = getNeutralEventDescription(firstEv.major, firstEv.minor, firstEv.verificationMode || undefined);
+      const resolvedName = userMap.get(empNo) || firstEv.employeeName || `Employee ${empNo}`;
 
       summaryList.push({
         date: dateStr,
         employeeNo: empNo,
-        employeeName: firstEv.employeeName || `Employee ${empNo}`,
+        employeeName: resolvedName,
         firstInTime: firstTime.toISOString(),
         firstInFormatted: firstTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }),
         lastOutTime: lastTime.toISOString(),

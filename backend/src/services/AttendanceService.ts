@@ -75,10 +75,26 @@ export class AttendanceService {
       }),
     ]);
 
+    // Build user name map for consistent employee naming
+    const empNos = Array.from(new Set(events.map((e) => e.employeeNo).filter(Boolean))) as string[];
+    const userMap = new Map<string, string>();
+    if (empNos.length > 0) {
+      try {
+        const users = await prisma.user.findMany({
+          where: { employeeNo: { in: empNos } },
+          select: { employeeNo: true, name: true },
+        });
+        if (Array.isArray(users)) {
+          users.forEach((u) => userMap.set(u.employeeNo, u.name));
+        }
+      } catch {}
+    }
+
     // Format events with neutral description mappings and native device time
     const formattedEvents = events.map((ev) => {
       const descInfo = getNeutralEventDescription(ev.major, ev.minor, ev.verificationMode || undefined);
       const eventDateObj = new Date(ev.eventTime);
+      const resolvedName = (ev.employeeNo && userMap.get(ev.employeeNo)) || ev.employeeName || 'Unknown';
 
       let rawObj: any = null;
       if (typeof ev.rawEvent === 'string') {
@@ -109,7 +125,7 @@ export class AttendanceService {
         deviceName: ev.device?.name || 'Hikvision Terminal',
         deviceModel: ev.device?.model || 'DS-K1T320MFWX',
         employeeNo: ev.employeeNo || 'N/A',
-        employeeName: ev.employeeName || 'Unknown',
+        employeeName: resolvedName,
         eventTime: ev.eventTime.toISOString(),
         dateFormatted: deviceDateFormatted,
         timeFormatted: deviceTimeFormatted,
