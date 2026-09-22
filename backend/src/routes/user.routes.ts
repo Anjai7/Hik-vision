@@ -265,6 +265,66 @@ router.post('/:employeeNo/synced', async (req: Request, res: Response, next: Nex
 });
 
 /**
+ * GET /api/users/:employeeNo/fingerprint
+ * Retrieve enrolled fingerprints from physical terminal
+ */
+router.get('/:employeeNo/fingerprint', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const fingerprints = await userService.getUserFingerprints(req.params.employeeNo);
+    res.json({
+      success: true,
+      data: fingerprints,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/users/:employeeNo/fingerprint/capture
+ * Activate terminal sensor to capture fingerprint and enroll for employee
+ */
+router.post('/:employeeNo/fingerprint/capture', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const fingerNo = req.body?.fingerNo ? Number(req.body.fingerNo) : 1;
+    const result = await userService.captureAndEnrollFingerprint(req.params.employeeNo, fingerNo);
+    res.json({
+      success: true,
+      data: result,
+      message: `Fingerprint #${fingerNo} captured and enrolled successfully on terminal.`,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * POST /api/users/:employeeNo/fingerprint/setup
+ * Directly setup/enroll fingerprint configuration on terminal
+ */
+router.post('/:employeeNo/fingerprint/setup', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { fingerPrintID, fingerData, fingerType } = req.body;
+    if (!fingerData) {
+      res.status(400).json({ success: false, error: { message: 'fingerData is required' } });
+      return;
+    }
+    const result = await userService.setupFingerprint(req.params.employeeNo, {
+      fingerPrintID: fingerPrintID ? Number(fingerPrintID) : 1,
+      fingerData,
+      fingerType,
+    });
+    res.json({
+      success: true,
+      data: result,
+      message: 'Fingerprint enrolled successfully',
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
  * DELETE /api/users/:employeeNo
  * Remove employee
  */

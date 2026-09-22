@@ -266,4 +266,147 @@ export class HikvisionUsers {
       name: access.name,
     });
   }
+
+  /**
+   * Trigger physical terminal optical sensor to capture a fingerprint
+   * Endpoint: POST /ISAPI/AccessControl/CaptureFingerPrint
+   */
+  public async captureFingerprint(options: {
+    fingerNo?: number;
+    timeoutMs?: number;
+  } = {}): Promise<{
+    fingerData?: string;
+    fingerPrintQuality?: number;
+    fingerNo: number;
+    raw: any;
+  }> {
+    const fingerNo = options.fingerNo || 1;
+    const timeoutMs = options.timeoutMs || 25000;
+
+    const xml = `<CaptureFingerPrintCond version="2.0" xmlns="http://www.isapi.org/ver20/XMLSchema">
+  <fingerNo>${fingerNo}</fingerNo>
+</CaptureFingerPrintCond>`;
+
+    try {
+      const response = await this.client.post<any>(
+        '/ISAPI/AccessControl/CaptureFingerPrint',
+        xml,
+        { timeoutMs }
+      );
+
+      // Parse XML response
+      const rawStr = typeof response === 'string' ? response : JSON.stringify(response);
+      const dataMatch = rawStr.match(/<fingerData>([^<]+)<\/fingerData>/i);
+      const qualMatch = rawStr.match(/<fingerPrintQuality>([^<]+)<\/fingerPrintQuality>/i);
+
+      return {
+        fingerData: dataMatch ? dataMatch[1] : undefined,
+        fingerPrintQuality: qualMatch ? Number(qualMatch[1]) : undefined,
+        fingerNo,
+        raw: response,
+      };
+    } catch (err: any) {
+      if (err.statusCode === 408 || err.message?.includes('timed out')) {
+        const timeoutError: any = new Error(
+          'Sensor timed out. Please place your finger flat and firmly on the terminal scanner.'
+        );
+        timeoutError.statusCode = 408;
+        throw timeoutError;
+      }
+      if (err.statusCode === 400 && (err.details?.subStatusCode === 'deviceError' || String(err.details).includes('deviceError'))) {
+        const devError: any = new Error(
+          'Fingerprint capture timed out or no finger detected on sensor. Please try again.'
+        );
+        devError.statusCode = 408;
+        throw devError;
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Save/enroll captured fingerprint onto physical Hikvision terminal
+   * Endpoint: POST /ISAPI/AccessControl/FingerPrint/SetUp?format=json
+   */
+  public async setupFingerprint(
+    employeeNo: string,
+    options: {
+      fingerPrintID?: number;
+      fingerData: string;
+      fingerType?: string;
+      cardReaderNo?: number;
+    }
+  ): Promise<any> {
+    const payload = {
+      FingerPrintCfg: {
+        employeeNo,
+        enableCardReader: [options.cardReaderNo || 1],
+        fingerPrintID: options.fingerPrintID || 1,
+        fingerType: options.fingerType || 'normalFP',
+        fingerData: options.fingerData,
+      },
+    };
+
+    const response = await this.client.post<any>(
+      '/ISAPI/AccessControl/FingerPrint/SetUp?format=json',
+      payload
+    );
+
+    return response;
+  }
+
+  /**
+   * Retrieve enrolled fingerprints for a user from physical terminal
+   * Endpoint: POST /ISAPI/AccessControl/FingerPrintUpload?format=json
+   */
+  public async getUserFingerprints(employeeNo: string): Promise<Array<{
+    cardReaderNo: number;
+    fingerPrintID: number;
+    fingerType: string;
+    fingerData?: string;
+  }>> {
+    const payload = {
+      FingerPrintCond: {
+        searchID: '1',
+        employeeNo,
+      },
+    };
+
+    try {
+      const response = await this.client.post<any>(
+        '/ISAPI/AccessControl/FingerPrintUpload?format=json',
+        payload
+      );
+
+      const info = response.FingerPrintInfo || response;
+      if (info.status === 'NoFP' || !Array.isArray(info.FingerPrintList)) {
+        return [];
+      }
+
+      return info.FingerPrintList.map((fp: any) => ({
+        cardReaderNo: Number(fp.cardReaderNo ?? 1),
+        fingerPrintID: Number(fp.fingerPrintID ?? 1),
+        fingerType: fp.fingerType || 'normalFP',
+        fingerData: fp.fingerData,
+      }));
+    } catch (err: any) {
+      // If terminal returns 404 or NoFP error, return empty list
+      return [];
+    }
+  }
+
+  /**
+   * Fetch total enrolled fingerprints count on device
+   * Endpoint: GET /ISAPI/AccessControl/FingerPrint/Count?format=json
+   */
+  public async getFingerprintCount(): Promise<number> {
+    try {
+      const res = await this.client.get<any>('/ISAPI/AccessControl/FingerPrint/Count?format=json');
+      const count = res.FingerPrintCount?.fingerPrintNumber ?? res.fingerPrintNumber ?? 0;
+      return Number(count);
+    } catch {
+      return 0;
+    }
+  }
 }
+

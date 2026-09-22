@@ -88,4 +88,46 @@ export const usersApi = {
     const res = await apiClient.post<ApiResponse<{ count: number; durationMs: number }>>('/users/sync');
     return res.data.data;
   },
+
+  getUserFingerprints: async (
+    employeeNo: string
+  ): Promise<Array<{ cardReaderNo: number; fingerPrintID: number; fingerType: string }>> => {
+    const res = await apiClient.get<
+      ApiResponse<Array<{ cardReaderNo: number; fingerPrintID: number; fingerType: string }>>
+    >(`/users/${employeeNo}/fingerprint`);
+    return res.data.data;
+  },
+
+  captureFingerprint: async (
+    employeeNo: string,
+    fingerNo = 1
+  ): Promise<{
+    success: boolean;
+    employeeNo: string;
+    fingerPrintID: number;
+    fingerPrintQuality?: number;
+    numOfFP: number;
+    user: UserData;
+  }> => {
+    const res = await apiClient.post<
+      ApiResponse<{
+        success: boolean;
+        employeeNo: string;
+        fingerPrintID: number;
+        fingerPrintQuality?: number;
+        numOfFP: number;
+        user: UserData;
+      }>
+    >(`/users/${employeeNo}/fingerprint/capture`, { fingerNo });
+    return res.data.data;
+  },
+
+  setupFingerprint: async (
+    employeeNo: string,
+    payload: { fingerPrintID?: number; fingerData: string; fingerType?: string }
+  ): Promise<any> => {
+    const res = await apiClient.post<ApiResponse<any>>(`/users/${employeeNo}/fingerprint/setup`, payload);
+    return res.data.data;
+  },
 };
+

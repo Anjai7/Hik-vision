@@ -20,7 +20,23 @@ export class UserService {
     const limit = Math.min(100, Math.max(1, params.limit || 20));
     const skip = (page - 1) * limit;
 
-    const where: any = {};
+    const device = await deviceService.getOrCreateDefaultDevice();
+
+    // Auto-sync if DB count does not match physical terminal
+    try {
+      const isapi = deviceService.getUsersIsapi();
+      const countRes = await isapi.getUserCount();
+      const dbCount = await prisma.user.count({ where: { deviceId: device.id } });
+      if (countRes.userNumber > 0 && countRes.userNumber !== dbCount) {
+        logger.info(`[UserService] Terminal count (${countRes.userNumber}) != DB count (${dbCount}). Synchronizing with terminal...`);
+        const { syncService } = await import('./SyncService');
+        await syncService.syncUsers();
+      }
+    } catch (e: any) {
+      logger.debug('[UserService] Terminal quick count check bypassed:', { error: e.message });
+    }
+
+    const where: any = { deviceId: device.id };
 
     if (params.search) {
       where.OR = [
@@ -69,8 +85,9 @@ export class UserService {
   }
 
   public async getUserByEmployeeNo(employeeNo: string) {
+    const device = await deviceService.getOrCreateDefaultDevice();
     const user = await prisma.user.findFirst({
-      where: { employeeNo },
+      where: { employeeNo, deviceId: device.id },
       include: {
         device: {
           select: {
@@ -358,6 +375,102 @@ export class UserService {
       where: { terminalSyncStatus: 'PENDING' },
       include: { device: true },
     });
+  }
+
+  /**
+   * Capture fingerprint from terminal sensor and enroll for employee
+   * Uses POST /ISAPI/AccessControl/CaptureFingerPrint and POST /ISAPI/AccessControl/FingerPrint/SetUp
+   */
+  public async captureAndEnrollFingerprint(employeeNo: string, fingerNo = 1) {
+    const existing = await this.getUserByEmployeeNo(employeeNo);
+    if (!existing) {
+      const err: any = new Error(`Employee '${employeeNo}' not found`);
+      err.statusCode = 404;
+      err.code = 'USER_NOT_FOUND';
+      throw err;
+    }
+
+    const isapi = deviceService.getUsersIsapi();
+
+    // 1. Hardware sensor capture
+    logger.info(`[UserService] Initiating fingerprint capture on physical terminal for employee ${employeeNo}...`);
+    const capture = await isapi.captureFingerprint({ fingerNo, timeoutMs: 25000 });
+
+    if (!capture.fingerData) {
+      const err: any = new Error('No fingerprint data received from terminal sensor. Please ensure finger is pressed flat.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    // 2. Setup/enroll fingerprint on physical terminal
+    logger.info(`[UserService] Enrolling captured fingerprint on physical terminal for employee ${employeeNo}...`);
+    const setupRes = await isapi.setupFingerprint(employeeNo, {
+      fingerPrintID: fingerNo,
+      fingerData: capture.fingerData,
+      fingerType: 'normalFP',
+    });
+
+    // 3. Retrieve verified enrolled list from terminal
+    const fingerprints = await isapi.getUserFingerprints(employeeNo);
+    const numOfFP = Math.max(1, fingerprints.length);
+
+    // 4. Update user database record
+    const updated = await prisma.user.update({
+      where: { id: existing.id },
+      data: {
+        numOfFP,
+        terminalSyncStatus: 'SYNCED',
+        lastTerminalSyncAt: new Date(),
+      },
+      include: {
+        device: { select: { name: true, model: true } },
+      },
+    });
+
+    return {
+      success: true,
+      employeeNo,
+      fingerPrintID: fingerNo,
+      fingerPrintQuality: capture.fingerPrintQuality,
+      numOfFP,
+      terminalResponse: setupRes,
+      user: updated,
+    };
+  }
+
+  /**
+   * Get enrolled fingerprints for user from terminal
+   * Uses POST /ISAPI/AccessControl/FingerPrintUpload?format=json
+   */
+  public async getUserFingerprints(employeeNo: string) {
+    const isapi = deviceService.getUsersIsapi();
+    return isapi.getUserFingerprints(employeeNo);
+  }
+
+  /**
+   * Set up fingerprint data directly
+   */
+  public async setupFingerprint(
+    employeeNo: string,
+    options: { fingerPrintID?: number; fingerData: string; fingerType?: string }
+  ) {
+    const isapi = deviceService.getUsersIsapi();
+    const res = await isapi.setupFingerprint(employeeNo, options);
+
+    const existing = await this.getUserByEmployeeNo(employeeNo);
+    if (existing) {
+      const fingerprints = await isapi.getUserFingerprints(employeeNo);
+      await prisma.user.update({
+        where: { id: existing.id },
+        data: {
+          numOfFP: Math.max(1, fingerprints.length),
+          terminalSyncStatus: 'SYNCED',
+          lastTerminalSyncAt: new Date(),
+        },
+      });
+    }
+
+    return res;
   }
 }
 

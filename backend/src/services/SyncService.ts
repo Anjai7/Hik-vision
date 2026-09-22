@@ -80,6 +80,12 @@ export class SyncService {
       for (const u of terminalUsers) {
         if (!u.employeeNo) continue;
 
+        const validObj = (u.Valid as any) || {};
+        const isBlacklisted = u.userType === 'blackList';
+        const isEnabled = !isBlacklisted && validObj.enable !== false;
+        const validFrom = validObj.beginTime ? new Date(validObj.beginTime) : null;
+        const validTo = validObj.endTime ? new Date(validObj.endTime) : null;
+
         await prisma.user.upsert({
           where: {
             deviceId_employeeNo: {
@@ -90,11 +96,16 @@ export class SyncService {
           update: {
             name: u.name || 'Unnamed',
             userType: u.userType || 'normal',
+            enabled: isEnabled,
             numOfFP: Number(u.numOfFP ?? 0),
             numOfFace: Number(u.numOfFace ?? 0),
             numOfCard: Number(u.numOfCard ?? 0),
+            validFrom,
+            validTo,
             gender: u.gender || null,
             groupId: u.groupId ? Number(u.groupId) : 1,
+            terminalSyncStatus: 'SYNCED',
+            lastTerminalSyncAt: new Date(),
             updatedAt: new Date(),
           },
           create: {
@@ -102,11 +113,16 @@ export class SyncService {
             employeeNo: u.employeeNo,
             name: u.name || 'Unnamed',
             userType: u.userType || 'normal',
+            enabled: isEnabled,
             numOfFP: Number(u.numOfFP ?? 0),
             numOfFace: Number(u.numOfFace ?? 0),
             numOfCard: Number(u.numOfCard ?? 0),
+            validFrom,
+            validTo,
             gender: u.gender || null,
             groupId: u.groupId ? Number(u.groupId) : 1,
+            terminalSyncStatus: 'SYNCED',
+            lastTerminalSyncAt: new Date(),
           },
         });
         processedCount++;

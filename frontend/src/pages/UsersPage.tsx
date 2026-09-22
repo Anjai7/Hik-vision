@@ -44,7 +44,21 @@ export const UsersPage: React.FC<UsersPageProps> = ({ onNavigateToAttendance }) 
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isFPModalOpen, setIsFPModalOpen] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [syncLoading, setSyncLoading] = useState(false);
+
+  // Fingerprint Enrollment state
+  const [userFingerprints, setUserFingerprints] = useState<
+    Array<{ cardReaderNo: number; fingerPrintID: number; fingerType: string }>
+  >([]);
+  const [fpLoading, setFpLoading] = useState(false);
+  const [fpCapturing, setFpCapturing] = useState(false);
+  const [selectedFingerNo, setSelectedFingerNo] = useState(1);
+  const [fpFeedback, setFpFeedback] = useState<{
+    type: 'success' | 'error' | 'info';
+    text: string;
+  } | null>(null);
 
   // Access period state for terminal configuration
   const [periodData, setPeriodData] = useState<{
@@ -185,6 +199,66 @@ export const UsersPage: React.FC<UsersPageProps> = ({ onNavigateToAttendance }) 
     }
   };
 
+  // Sync Directly From Physical Terminal
+  const handleSyncFromDevice = async () => {
+    try {
+      setSyncLoading(true);
+      setError(null);
+      const res = await usersApi.syncUsers();
+      setSuccessMsg(`Synchronized ${res.count} employees from terminal hardware memory (${res.durationMs}ms).`);
+      await fetchUsers();
+    } catch (err: any) {
+      setError(err.message || 'Failed to sync with terminal hardware');
+    } finally {
+      setSyncLoading(false);
+    }
+  };
+
+  // Open Fingerprint Enrollment Modal
+  const openFPModal = async (user: UserData) => {
+    setSelectedUser(user);
+    setIsFPModalOpen(true);
+    setFpFeedback(null);
+    setSelectedFingerNo(1);
+    try {
+      setFpLoading(true);
+      const fps = await usersApi.getUserFingerprints(user.employeeNo);
+      setUserFingerprints(fps || []);
+    } catch {
+      setUserFingerprints([]);
+    } finally {
+      setFpLoading(false);
+    }
+  };
+
+  // Trigger Hardware Fingerprint Capture
+  const handleCaptureFingerprint = async () => {
+    if (!selectedUser) return;
+    try {
+      setFpCapturing(true);
+      setFpFeedback({
+        type: 'info',
+        text: 'Terminal sensor is now ACTIVE! Place employee\'s finger firmly on the optical scanner now...',
+      });
+      const result = await usersApi.captureFingerprint(selectedUser.employeeNo, selectedFingerNo);
+      setFpFeedback({
+        type: 'success',
+        text: `Fingerprint #${selectedFingerNo} captured & enrolled directly into terminal memory!${result.fingerPrintQuality ? ` (Quality: ${result.fingerPrintQuality}%)` : ''}`,
+      });
+      // Refresh fingerprints list and users list
+      const fps = await usersApi.getUserFingerprints(selectedUser.employeeNo);
+      setUserFingerprints(fps || []);
+      await fetchUsers();
+    } catch (err: any) {
+      setFpFeedback({
+        type: 'error',
+        text: err.message || 'Fingerprint capture timed out or failed. Please try again.',
+      });
+    } finally {
+      setFpCapturing(false);
+    }
+  };
+
   // Create User Handler
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -322,14 +396,27 @@ export const UsersPage: React.FC<UsersPageProps> = ({ onNavigateToAttendance }) 
             <p className="card-subtitle">Manage enrolled employees, credential access permissions, and profiles</p>
           </div>
 
-          <button
-            className="btn btn-primary"
-            onClick={openAddModal}
-            style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
-          >
-            <UserPlus size={16} />
-            <span>Add Employee</span>
-          </button>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            <button
+              className="btn btn-outline"
+              onClick={handleSyncFromDevice}
+              disabled={syncLoading}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+              title="Query terminal user endpoint directly to refresh all users"
+            >
+              <RefreshCw size={16} className={syncLoading ? 'spin' : ''} />
+              <span>{syncLoading ? 'Syncing...' : 'Sync Device'}</span>
+            </button>
+
+            <button
+              className="btn btn-primary"
+              onClick={openAddModal}
+              style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+            >
+              <UserPlus size={16} />
+              <span>Add Employee</span>
+            </button>
+          </div>
         </div>
 
         {/* Filter Controls Bar */}
@@ -485,10 +572,16 @@ export const UsersPage: React.FC<UsersPageProps> = ({ onNavigateToAttendance }) 
                           <CreditCard size={11} style={{ marginRight: '4px' }} />
                           Card ({u.numOfCard})
                         </Badge>
-                        <Badge variant={u.numOfFP > 0 ? 'success' : 'neutral'}>
-                          <Fingerprint size={11} style={{ marginRight: '4px' }} />
-                          FP ({u.numOfFP})
-                        </Badge>
+                        <span
+                          style={{ cursor: 'pointer', display: 'inline-flex' }}
+                          onClick={() => openFPModal(u)}
+                          title="Click to manage fingerprints on terminal"
+                        >
+                          <Badge variant={u.numOfFP > 0 ? 'success' : 'neutral'}>
+                            <Fingerprint size={11} style={{ marginRight: '4px' }} />
+                            FP ({u.numOfFP})
+                          </Badge>
+                        </span>
                       </div>
                     </td>
                     <td style={{ color: 'var(--text-muted)' }}>
@@ -496,6 +589,23 @@ export const UsersPage: React.FC<UsersPageProps> = ({ onNavigateToAttendance }) 
                     </td>
                     <td style={{ textAlign: 'right' }}>
                       <div style={{ display: 'inline-flex', gap: '6px', alignItems: 'center' }}>
+                        <button
+                          className="btn btn-outline"
+                          style={{
+                            padding: '4px 8px',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: '4px',
+                            fontSize: '12px',
+                            borderColor: 'rgba(59, 130, 246, 0.4)',
+                            color: '#60a5fa',
+                          }}
+                          onClick={() => openFPModal(u)}
+                          title="Capture & Enroll Fingerprint on Physical Terminal"
+                        >
+                          <Fingerprint size={12} />
+                          <span>FP</span>
+                        </button>
                         <button
                           className="btn btn-secondary"
                           style={{ padding: '4px 8px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '12px' }}
@@ -988,6 +1098,238 @@ export const UsersPage: React.FC<UsersPageProps> = ({ onNavigateToAttendance }) 
             </label>
           </div>
         </form>
+      </Modal>
+
+      {/* Fingerprint Enrollment Modal */}
+      <Modal
+        isOpen={isFPModalOpen}
+        title={`Fingerprint Management — ${selectedUser?.name} (#${selectedUser?.employeeNo})`}
+        onClose={() => {
+          if (!fpCapturing) setIsFPModalOpen(false);
+        }}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', width: '100%' }}>
+            <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+              Hardware: DS-K1T320MFWX (192.168.18.229)
+            </span>
+            <button
+              className="btn btn-outline"
+              onClick={() => setIsFPModalOpen(false)}
+              disabled={fpCapturing}
+            >
+              Close
+            </button>
+          </div>
+        }
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          {/* Header Info */}
+          <div
+            style={{
+              padding: '12px 16px',
+              background: 'rgba(59, 130, 246, 0.08)',
+              borderRadius: '8px',
+              border: '1px solid rgba(59, 130, 246, 0.2)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+            }}
+          >
+            <div
+              style={{
+                width: '40px',
+                height: '40px',
+                borderRadius: '50%',
+                background: 'rgba(59, 130, 246, 0.2)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#3b82f6',
+                flexShrink: 0,
+              }}
+            >
+              <Fingerprint size={22} />
+            </div>
+            <div>
+              <p style={{ margin: 0, fontWeight: 600, fontSize: '13.5px', color: 'var(--text-primary)' }}>
+                Physical Terminal Optical Sensor Enrollment
+              </p>
+              <p style={{ margin: '2px 0 0 0', fontSize: '12px', color: 'var(--text-muted)' }}>
+                Calls terminal <code style={{ color: '#60a5fa' }}>/ISAPI/AccessControl/CaptureFingerPrint</code> directly.
+              </p>
+            </div>
+          </div>
+
+          {/* Feedback banner */}
+          {fpFeedback && (
+            <div
+              className={`alert-banner ${
+                fpFeedback.type === 'success'
+                  ? 'alert-success'
+                  : fpFeedback.type === 'error'
+                  ? 'alert-danger'
+                  : 'alert-info'
+              }`}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                padding: '10px 14px',
+                fontSize: '13px',
+                borderRadius: '6px',
+              }}
+            >
+              {fpFeedback.type === 'success' && <CheckCircle2 size={16} />}
+              {fpFeedback.type === 'error' && <AlertTriangle size={16} />}
+              {fpFeedback.type === 'info' && <RefreshCw size={16} className="spin" />}
+              <span>{fpFeedback.text}</span>
+            </div>
+          )}
+
+          {/* Currently Enrolled Fingerprints on Physical Device */}
+          <div style={{ border: '1px solid var(--border-color)', borderRadius: '8px', padding: '14px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                Enrolled Device Fingerprints ({userFingerprints.length})
+              </span>
+              <button
+                type="button"
+                className="btn btn-outline"
+                style={{ fontSize: '11px', padding: '3px 8px' }}
+                onClick={async () => {
+                  if (selectedUser) {
+                    setFpLoading(true);
+                    const fps = await usersApi.getUserFingerprints(selectedUser.employeeNo);
+                    setUserFingerprints(fps || []);
+                    setFpLoading(false);
+                  }
+                }}
+                disabled={fpLoading}
+              >
+                <RefreshCw size={10} className={fpLoading ? 'spin' : ''} style={{ marginRight: '4px' }} />
+                Refresh from Terminal
+              </button>
+            </div>
+
+            {fpLoading ? (
+              <div style={{ textAlign: 'center', padding: '16px' }}>
+                <div className="spinner" style={{ margin: '0 auto 6px auto' }} />
+                <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>Querying terminal memory...</span>
+              </div>
+            ) : userFingerprints.length > 0 ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {userFingerprints.map((fp) => (
+                  <div
+                    key={fp.fingerPrintID}
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '8px 12px',
+                      background: 'rgba(255, 255, 255, 0.03)',
+                      borderRadius: '6px',
+                      border: '1px solid rgba(255, 255, 255, 0.06)',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                      <Fingerprint size={16} style={{ color: '#10b981' }} />
+                      <div>
+                        <span style={{ fontSize: '13px', fontWeight: 500 }}>
+                          Fingerprint Slot #{fp.fingerPrintID}
+                        </span>
+                        <span style={{ fontSize: '11px', color: 'var(--text-muted)', marginLeft: '8px' }}>
+                          Type: {fp.fingerType} | Reader: #{fp.cardReaderNo}
+                        </span>
+                      </div>
+                    </div>
+                    <Badge variant="success">Active on Terminal</Badge>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '16px', background: 'rgba(255, 255, 255, 0.01)', borderRadius: '6px' }}>
+                <p style={{ margin: 0, fontSize: '13px', color: 'var(--text-muted)' }}>
+                  No fingerprints enrolled on physical device for this employee yet.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* New Enrollment Action */}
+          <div
+            style={{
+              padding: '16px',
+              borderRadius: '8px',
+              background: fpCapturing ? 'rgba(59, 130, 246, 0.1)' : 'rgba(255, 255, 255, 0.02)',
+              border: fpCapturing ? '1px solid #3b82f6' : '1px solid var(--border-color)',
+              transition: 'all 0.3s ease',
+            }}
+          >
+            <h4 style={{ margin: '0 0 10px 0', fontSize: '13.5px', fontWeight: 600 }}>
+              Live Hardware Sensor Capture
+            </h4>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+              <label style={{ fontSize: '12.5px', color: 'var(--text-secondary)' }}>Finger Slot:</label>
+              <select
+                className="input-field"
+                value={selectedFingerNo}
+                onChange={(e) => setSelectedFingerNo(Number(e.target.value))}
+                disabled={fpCapturing}
+                style={{ width: '130px', padding: '5px 10px', fontSize: '12.5px' }}
+              >
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                  <option key={n} value={n}>
+                    Finger #{n}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {fpCapturing ? (
+              <div
+                style={{
+                  padding: '16px',
+                  background: 'rgba(59, 130, 246, 0.15)',
+                  borderRadius: '8px',
+                  border: '1px dashed #3b82f6',
+                  textAlign: 'center',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <div className="spinner" style={{ width: '28px', height: '28px' }} />
+                <span style={{ fontWeight: 600, color: '#60a5fa', fontSize: '14px' }}>
+                  Terminal Sensor Activated!
+                </span>
+                <span style={{ fontSize: '12.5px', color: 'var(--text-secondary)', maxWidth: '380px' }}>
+                  Please place employee's finger flat and firmly on the terminal glass sensor now. Waiting for device read (up to 25s)...
+                </span>
+              </div>
+            ) : (
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleCaptureFingerprint}
+                style={{
+                  width: '100%',
+                  padding: '10px 16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: '8px',
+                  fontSize: '13.5px',
+                  fontWeight: 600,
+                }}
+              >
+                <Fingerprint size={18} />
+                <span>Activate Terminal Sensor & Capture</span>
+              </button>
+            )}
+          </div>
+        </div>
       </Modal>
     </div>
   );

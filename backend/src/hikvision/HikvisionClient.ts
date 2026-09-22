@@ -69,12 +69,14 @@ export class HikvisionClient {
     targetUrl: URL,
     method: string,
     headers: Record<string, string>,
-    bodyStr?: string
+    bodyStr?: string,
+    timeoutMs?: number
   ): Promise<HttpResponse> {
     return new Promise((resolve, reject) => {
       const isHttps = targetUrl.protocol === 'https:';
       const transport = isHttps ? https : http;
       const agent = isHttps ? this.httpsAgent : this.httpAgent;
+      const effectiveTimeout = timeoutMs ?? this.config.timeoutMs;
 
       const options: https.RequestOptions = {
         protocol: targetUrl.protocol,
@@ -84,7 +86,7 @@ export class HikvisionClient {
         method,
         headers,
         agent,
-        timeout: this.config.timeoutMs,
+        timeout: effectiveTimeout,
       };
 
       const req = transport.request(options, (res) => {
@@ -140,20 +142,27 @@ export class HikvisionClient {
     method: string,
     endpointPath: string,
     body?: unknown,
-    retryCount = 0
+    retryCount = 0,
+    options?: { timeoutMs?: number; headers?: Record<string, string> }
   ): Promise<T> {
     const cleanPath = endpointPath.startsWith('/') ? endpointPath : `/${endpointPath}`;
     const targetUrl = new URL(`${this.config.host}${cleanPath}`);
     const uri = `${targetUrl.pathname}${targetUrl.search}`;
 
     const headers: Record<string, string> = {
-      Accept: 'application/json, text/plain, */*',
+      Accept: 'application/json, text/xml, application/xml, text/plain, */*',
+      ...(options?.headers || {}),
     };
 
     let bodyStr: string | undefined;
     if (body !== undefined && body !== null) {
       bodyStr = typeof body === 'string' ? body : JSON.stringify(body);
-      headers['Content-Type'] = 'application/json';
+      if (!headers['Content-Type']) {
+        headers['Content-Type'] =
+          typeof body === 'string' && body.trim().startsWith('<')
+            ? 'application/xml; charset=UTF-8'
+            : 'application/json';
+      }
       headers['Content-Length'] = Buffer.byteLength(bodyStr).toString();
     }
 
@@ -173,7 +182,7 @@ export class HikvisionClient {
       }
     }
 
-    const response = await this.executeRequest(targetUrl, method, headers, bodyStr);
+    const response = await this.executeRequest(targetUrl, method, headers, bodyStr, options?.timeoutMs);
 
     // Handle 401 Unauthorized -> Perform Digest Authentication
     if (response.statusCode === 401) {
@@ -206,7 +215,7 @@ export class HikvisionClient {
       }
 
       // Retry request with newly computed Digest header
-      return this.request<T>(method, endpointPath, body, retryCount + 1);
+      return this.request<T>(method, endpointPath, body, retryCount + 1, options);
     }
 
     // Non-success status code handling
@@ -237,19 +246,33 @@ export class HikvisionClient {
     }
   }
 
-  public async get<T = any>(path: string): Promise<T> {
-    return this.request<T>('GET', path);
+  public async get<T = any>(
+    path: string,
+    options?: { timeoutMs?: number; headers?: Record<string, string> }
+  ): Promise<T> {
+    return this.request<T>('GET', path, undefined, 0, options);
   }
 
-  public async post<T = any>(path: string, body?: unknown): Promise<T> {
-    return this.request<T>('POST', path, body);
+  public async post<T = any>(
+    path: string,
+    body?: unknown,
+    options?: { timeoutMs?: number; headers?: Record<string, string> }
+  ): Promise<T> {
+    return this.request<T>('POST', path, body, 0, options);
   }
 
-  public async put<T = any>(path: string, body?: unknown): Promise<T> {
-    return this.request<T>('PUT', path, body);
+  public async put<T = any>(
+    path: string,
+    body?: unknown,
+    options?: { timeoutMs?: number; headers?: Record<string, string> }
+  ): Promise<T> {
+    return this.request<T>('PUT', path, body, 0, options);
   }
 
-  public async delete<T = any>(path: string): Promise<T> {
-    return this.request<T>('DELETE', path);
+  public async delete<T = any>(
+    path: string,
+    options?: { timeoutMs?: number; headers?: Record<string, string> }
+  ): Promise<T> {
+    return this.request<T>('DELETE', path, undefined, 0, options);
   }
 }
