@@ -299,18 +299,24 @@ export class UserService {
       enabled?: boolean;
     }
   ) {
+    const enabled = data.enabled !== undefined ? data.enabled : true;
     return this.updateUser(employeeNo, {
       validFrom: data.validFrom,
       validTo: data.validTo,
-      enabled: data.enabled !== undefined ? data.enabled : true,
+      enabled,
+      userType: enabled ? 'normal' : 'blackList',
     });
   }
 
   public async toggleUserStatus(employeeNo: string, enabled: boolean) {
-    // When disabling, set validTo to yesterday (expires locally on terminal)
-    // When enabling, extend validTo to 2035
+    // When disabling, set validTo to yesterday and userType to blackList (strictly blocks on terminal)
+    // When enabling, extend validTo to 2035 and set userType to normal
     const validTo = enabled ? new Date('2035-12-31T23:59:59Z') : new Date(Date.now() - 24 * 60 * 60 * 1000);
-    return this.updateUser(employeeNo, { enabled, validTo });
+    return this.updateUser(employeeNo, {
+      enabled,
+      validTo,
+      userType: enabled ? 'normal' : 'blackList',
+    });
   }
 
   public async expireUser(employeeNo: string) {
@@ -318,6 +324,7 @@ export class UserService {
     return this.updateUser(employeeNo, {
       enabled: false,
       validTo: yesterday,
+      userType: 'blackList',
     });
   }
 
@@ -329,6 +336,7 @@ export class UserService {
       enabled: true,
       validFrom: now,
       validTo: future,
+      userType: 'normal',
     });
   }
 

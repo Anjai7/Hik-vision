@@ -200,32 +200,45 @@ export class HikvisionUsers {
     const endTime = formatHikvisionDateTime(options.endTime, '2035-12-31T23:59:59');
     const enable = options.enable !== undefined ? options.enable : true;
 
+    const isBlocked = options.enable === false || options.userType === 'blackList';
+    const computedUserType = isBlocked ? 'blackList' : (options.userType || 'normal');
+
     const payload: any = {
       UserInfo: {
         employeeNo,
+        name: options.name || '',
+        userType: computedUserType,
         Valid: {
-          enable,
+          enable: !isBlocked,
           beginTime,
           endTime,
           timeType: 'local',
         },
+        doorRight: '1',
+        RightPlan: [{ doorNo: 1, planTemplateNo: '1' }],
+        gender: 'male',
+        localUIRight: false,
+        maxOpenDoorTime: 0,
+        userVerifyMode: '',
+        groupId: 1,
+        userLevel: 'Employee',
+        password: '',
       },
     };
 
-    if (options.name) payload.UserInfo.name = options.name;
-    if (options.userType) payload.UserInfo.userType = options.userType;
-    payload.UserInfo.doorRight = '1';
-    payload.UserInfo.RightPlan = [{ doorNo: 1, planTemplateNo: '1' }];
+    if (!payload.UserInfo.name && !options.name) {
+      delete payload.UserInfo.name;
+    }
 
     try {
       return await this.client.put<any>(
-        '/ISAPI/AccessControl/UserInfo/SetUp?format=json',
+        '/ISAPI/AccessControl/UserInfo/Modify?format=json',
         payload
       );
-    } catch (setUpErr) {
-      // Fallback to Modify if SetUp is rejected
+    } catch (modErr) {
+      // Fallback to SetUp if Modify fails
       return await this.client.put<any>(
-        '/ISAPI/AccessControl/UserInfo/Modify?format=json',
+        '/ISAPI/AccessControl/UserInfo/SetUp?format=json',
         payload
       );
     }

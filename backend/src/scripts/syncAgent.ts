@@ -56,6 +56,7 @@ export async function runSyncCycle(): Promise<{ processed: number; errors: numbe
   for (const user of pendingUsers) {
     try {
       const isExpired = user.enabled === false || (user.validTo && new Date(user.validTo) < new Date());
+      const computedUserType = isExpired ? 'blackList' : (user.userType || 'normal');
       const beginTime = isExpired
         ? '2020-01-01T00:00:00'
         : formatHikvisionDateTime(user.validFrom, '2020-01-01T00:00:00');
@@ -63,18 +64,18 @@ export async function runSyncCycle(): Promise<{ processed: number; errors: numbe
         ? '2020-01-02T00:00:00' // Expired date in the past -> terminal locks door!
         : formatHikvisionDateTime(user.validTo, '2035-12-31T23:59:59');
 
-      console.log(`[SyncAgent] Syncing ${user.name} (ID: ${user.employeeNo}) to terminal...`);
+      console.log(`[SyncAgent] Syncing ${user.name} (ID: ${user.employeeNo}, type: ${computedUserType}) to terminal...`);
 
       try {
         // Try modifying existing user first
         await hikUsers.updateUserValidity(user.employeeNo, {
           beginTime,
           endTime,
-          enable: user.enabled,
+          enable: !isExpired,
           name: user.name,
-          userType: user.userType,
+          userType: computedUserType,
         });
-        console.log(`[SyncAgent] SUCCESS: Updated validity for ID ${user.employeeNo}.`);
+        console.log(`[SyncAgent] SUCCESS: Updated validity & status for ID ${user.employeeNo}.`);
       } catch (modErr: any) {
         // If user doesn't exist on terminal yet, create them!
         console.log(`[SyncAgent] User ${user.employeeNo} not found on terminal, provisioning new user...`);
